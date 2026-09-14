@@ -99,6 +99,9 @@ def _patch_update_deps(monkeypatch, tmp_path, run_side_effect):
         main_web_build, "_record_bytecode_fingerprint", lambda *a, **k: None
     )
     monkeypatch.setattr(
+        hermes_main, "_purge_stale_hermes_modules", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
         hermes_main, "_run_pre_update_backup", lambda *a, **k: None
     )
     monkeypatch.setattr(
@@ -124,6 +127,8 @@ def _patch_update_deps(monkeypatch, tmp_path, run_side_effect):
     monkeypatch.setattr(
         hermes_gateway, "supports_systemd_services", lambda: False
     )
+    monkeypatch.setattr(hermes_gateway, "is_macos", lambda: False)
+    monkeypatch.setattr(hermes_gateway, "is_windows", lambda: False)
     monkeypatch.setattr(
         hermes_gateway, "find_profile_gateway_processes", lambda *a, **k: []
     )

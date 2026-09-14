@@ -750,7 +750,7 @@ def _kill_process_group_posix(proc) -> None:
         pgid = os.getpgid(proc.pid)
     except ProcessLookupError:
         if (pgid := getattr(proc, "_hermes_pgid", None)) is None:
-            raise
+            return
     try:  # psutil children snapshot; empty on any failure (must never break the kill)
         import psutil
         descendants = psutil.Process(proc.pid).children(recursive=True)
@@ -763,7 +763,7 @@ def _kill_process_group_posix(proc) -> None:
             _wait_for_group_exit(proc, pgid, 2.0)
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(timeout=0.2)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         pass
     _sweep_escaped_descendants(descendants, pgid)
 

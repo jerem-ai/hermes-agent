@@ -364,7 +364,11 @@ DANGEROUS_PATTERNS = [
     # sequential match: a for-loop building the label from a list defined EARLIER (`for item in 'ai.hermes...'; do
     # launchctl bootout "$label"`) never has "hermes" after the verb, and that slipped past and restarted 4 gateways
     # with zero approval. Erring broad is correct for an approval gate: an extra prompt is cheap.
-    (r'(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:hermes|ai\.hermes)\b)', "stop/restart hermes launchd service (kills running agents)"),
+    # Anchor the two whole-command lookaheads. Without ^, the regex engine
+    # retries both suffix scans at every byte of a benign compound command,
+    # turning the approval check quadratic (4,000 harmless segments took
+    # minutes on the canonical test host).
+    (r'^(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:hermes|ai\.hermes)\b)', "stop/restart hermes launchd service (kills running agents)"),
     (rf'\b(cp|mv|install)\b.*\s{_SYSTEM_CONFIG_PATH}', "copy/move file into system config path"),
     (rf'\b(cp|mv|install)\b.*\s["\']?{_PROJECT_SENSITIVE_WRITE_TARGET}["\']?{_COMMAND_TAIL}', "overwrite project env/config file"),
     # cp/mv/install OVERWRITING a credential/SSH/shell-rc/Hermes file (key implant, login-time

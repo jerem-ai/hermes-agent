@@ -156,6 +156,7 @@ def test_fast_path_contract_unchanged(tmp_path):
     assert r["timed_out"] is False
 
 
+@pytest.mark.live_system_guard_bypass  # delivers a real SIGINT to this pytest process
 def test_interrupt_kills_hook_and_propagates(tmp_path):
     """Ctrl+C during a hook must reap the hook, then let KeyboardInterrupt through.
 
@@ -179,7 +180,10 @@ def test_interrupt_kills_hook_and_propagates(tmp_path):
     interrupter = threading.Thread(target=interrupt_once_running, daemon=True)
     interrupter.start()
     with pytest.raises(KeyboardInterrupt):
-        _spawn(_spec(str(script), timeout=300), "{}")
+        # Keep the missed-signal path bounded. A broken interrupter should
+        # produce a focused failure instead of consuming the runner's 300s
+        # file timeout (and another 300s retry) with no traceback.
+        _spawn(_spec(str(script), timeout=30), "{}")
     interrupter.join(timeout=5)
 
     hook_pid = _read_marker(marker)

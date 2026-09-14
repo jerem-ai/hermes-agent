@@ -85,6 +85,7 @@ def test_list_authenticated_providers_enumerates_dict_format_models(monkeypatch)
             "name": "Local Ollama",
             "api": "http://localhost:11434/v1",
             "default_model": "minimax-m2.7:cloud",
+            "discover_models": False,
             "models": {
                 "minimax-m2.7:cloud": {"context_length": 196608},
                 "kimi-k2.5:cloud": {"context_length": 200000},
@@ -532,16 +533,16 @@ def test_section3_probes_no_key_endpoint_with_singular_default_model(monkeypatch
     monkeypatch.setattr("hermes_cli.models.fetch_api_models", _fake_fetch)
 
     user_providers = {
-        "local-ollama": {
-            "name": "Local Ollama",
-            "api": "http://localhost:11434/v1",
+        "local-openai": {
+            "name": "Local OpenAI",
+            "api": "http://localhost:1234/v1",
             "default_model": "llama3",
             # No api_key, no models: list — singular default only.
         }
     }
 
     providers = list_authenticated_providers(
-        current_provider="local-ollama",
+        current_provider="local-openai",
         user_providers=user_providers,
         custom_providers=[],
         max_models=50,
@@ -551,7 +552,7 @@ def test_section3_probes_no_key_endpoint_with_singular_default_model(monkeypatch
         "singular default_model must not suppress live discovery"
     )
     assert probed["api_key"] == ""
-    row = next(p for p in providers if p["slug"] == "local-ollama")
+    row = next(p for p in providers if p["slug"] == "local-openai")
     assert row["models"] == ["live-model-1", "live-model-2", "live-model-3"]
     assert row["total_models"] == 3
 

@@ -26,6 +26,11 @@ from tools import browser_tool_lifecycle as bt_lifecycle
 # Safety net so a regression parks the executor thread forever instead of
 # hanging CI.  No assertion below depends on elapsed time.
 _TURN_UNBLOCK_TIMEOUT = 30.0
+# The success path runs beside thousands of files in the canonical parallel
+# suite. Its deadline is a deadlock safety net, not a latency assertion, so it
+# needs enough headroom for a heavily loaded event loop. The 100 ms test below
+# separately proves that a genuine overrun still reports ``timed_out=True``.
+_DRAIN_SUCCESS_TIMEOUT = 10.0
 
 
 class _RunTask:
@@ -157,7 +162,9 @@ class TestDrainWaitsForApiWork:
 
                 assert api._active_run_agents == {}
                 assert runner._active_api_run_count() == 1
-                drain_task = original_create_task(runner._drain_active_agents(2.0))
+                drain_task = original_create_task(
+                    runner._drain_active_agents(_DRAIN_SUCCESS_TIMEOUT)
+                )
                 await asyncio.sleep(0.1)
                 assert not drain_task.done()
 
@@ -603,5 +610,4 @@ class TestShutdownSettleWindow:
             _INTERRUPT_REASON_GATEWAY_SHUTDOWN,
             _INTERRUPT_REASON_GATEWAY_SHUTDOWN,
         ]
-
 

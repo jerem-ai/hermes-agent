@@ -2,6 +2,7 @@
 instant, Python-controlled UX); install.sh / install.ps1 remain the *installation* backend."""
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -76,8 +77,17 @@ def _find_install_script(package_dir: Path | None = None, repo_root: Path | None
 def ensure_dependency(dep: str, interactive: bool = True) -> bool:
     """Ensure a non-Python dependency is available. Returns True if available."""
     check = _DEP_CHECKS.get(dep)
-    if check is None or check():  # unknown dep — don't silently forward to install script
-        return check is not None
+    if check is None:  # unknown dep — don't silently forward to install script
+        return False
+    if check():
+        return True
+    # The test harness deliberately keeps HOME stable for subprocess tests and
+    # isolates only HERMES_HOME. Running the real installer in that state can
+    # still rewrite machine-global links such as ~/.local/bin/node. Discovery
+    # tests may exercise the lazy-install branch, but installation itself must
+    # stay fail-closed inside an isolated test process.
+    if os.environ.get("HERMES_TEST_ISOLATION"):
+        return False
     script, shell = _find_install_script()
     desc = _DEP_DESCRIPTIONS.get(dep, dep)
     if script is None:

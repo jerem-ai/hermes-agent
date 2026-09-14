@@ -105,8 +105,13 @@ class TestConfigFilePermissions(unittest.TestCase):
             self.assertEqual(file_mode, 0o600)
 
     def test_ensure_hermes_home_sets_0700(self):
-        home = Path(self.tmpdir) / ".hermes"
-        with patch("hermes_cli.config.get_hermes_home", return_value=home):
+        # macOS spells the temporary root through the /var -> /private/var
+        # symlink. Resolve that platform alias so this test exercises chmod on
+        # an ordinary directory rather than Hermes' intentional symlink-boundary
+        # behavior.
+        home = Path(self.tmpdir).resolve() / ".hermes"
+        with patch("hermes_cli.config.get_hermes_home", return_value=home), \
+             patch("hermes_cli.config._is_container", return_value=False):
             from hermes_cli.config import ensure_hermes_home
             ensure_hermes_home()
 

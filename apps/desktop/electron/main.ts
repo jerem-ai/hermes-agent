@@ -17278,10 +17278,21 @@ ipcMain.handle('hermes:savePastedText', async (_event, payload) => {
 })
 
 ipcMain.handle('hermes:saveClipboardImage', async () => {
-  const image = clipboard.readImage()
+  const items = await clipboard.read()
 
-  if (image && !image.isEmpty()) {
-    return writeComposerImage(image.toPNG(), '.png')
+  for (const item of items) {
+    const imageType = item.types.find(type => type.startsWith('image/'))
+
+    if (!imageType) {
+      continue
+    }
+
+    const image = await item.getType(imageType)
+
+    if ('arrayBuffer' in image) {
+      const extension = extensionForMimeType(imageType) || '.png'
+      return writeComposerImage(Buffer.from(await image.arrayBuffer()), extension)
+    }
   }
 
   // WSL2/WSLg doesn't bridge clipboard *images* from the Windows host to the

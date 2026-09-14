@@ -299,8 +299,15 @@ def test_server_request_round_trip_uses_response_frame(capture):
     from tui_gateway import server_requests
     server, buf = capture
     box = {}
-    thread = threading.Thread(target=lambda: box.__setitem__("r", server._ask("sudo", "s1", {}, timeout=5)), daemon=True)
+    started = threading.Event()
+
+    def ask():
+        started.set()
+        box["r"] = server._ask("sudo", "s1", {}, timeout=5)
+
+    thread = threading.Thread(target=ask, daemon=True)
     thread.start()
+    assert started.wait(timeout=10), "request thread did not start"
     req = _wait_open(server_requests, buf)
     frame = _frames(buf)[-1]
     assert frame == {"jsonrpc": "2.0", "id": req.id, "method": "sudo", "params": {"session_id": "s1"}}

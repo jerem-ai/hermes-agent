@@ -50,7 +50,11 @@ def _prepare_slash_worker_runtime() -> None:
     """
     from hermes_cli.mcp_startup import start_background_mcp_discovery, wait_for_mcp_discovery
     start_background_mcp_discovery(logger=logger, thread_name="slash-worker-mcp-discovery")
-    wait_for_mcp_discovery()
+    # This process snapshots its tool registry once when HermesCLI is built;
+    # unlike the long-lived TUI, it has no late-refresh path. Use the bounded
+    # single-query budget so a busy host cannot permanently omit a configured
+    # profile-local MCP server after the ordinary short startup wait expires.
+    wait_for_mcp_discovery(single_query=True)
 
 
 def _start_parent_death_watchdog(original_ppid) -> None:

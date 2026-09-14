@@ -193,6 +193,8 @@ def test_waiter_picks_up_reply_within_a_sub_second_cadence(root):
 
     def write_reply():
         time.sleep(0.3)
+        reply_path.write_text("{", encoding="utf-8")
+        time.sleep(0.1)
         reply_path.write_text(json.dumps({"reply": "pong"}), encoding="utf-8")
 
     threading.Thread(target=write_reply, daemon=True).start()

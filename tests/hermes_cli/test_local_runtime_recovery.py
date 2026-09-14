@@ -221,7 +221,14 @@ def test_spawn_state_records_process_incarnations(tmp_path, monkeypatch):
 
     monkeypatch.setattr(supervisor, "runtimes_root", lambda: tmp_path)
     sup = supervisor.LlamaServerSupervisor(tmp_path, tmp_path, port=59998)
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    # A freshly launched framework Python briefly reports the launcher and
+    # then Python.app as its executable on macOS. The managed runtime owns a
+    # native llama-server binary, so use an equally stable native process for
+    # this identity test.
+    command = [sys.executable, "-c", "import time; time.sleep(60)"]
+    if os.name != "nt":
+        command = ["/bin/sleep", "60"]
+    proc = subprocess.Popen(command)
     try:
         sup.proc = proc
         sup._write_state()

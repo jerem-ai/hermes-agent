@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -26,7 +27,9 @@ def test_real_read_tool_binaries_confirm_option_ownership(
     if shutil.which(argv[0]) is None:
         pytest.skip(f"{argv[0]} is not installed")
 
-    completed = subprocess.run(argv, input=stdin, text=True, capture_output=True)
+    completed = subprocess.run(
+        argv, input=stdin, text=True, capture_output=True, timeout=20
+    )
 
     assert completed.returncode == expected_returncode
     assert completed.stdout == expected_output
@@ -49,6 +52,8 @@ def test_real_binaries_execute_leading_dash_program_payload(
     """A PATH marker proves these binaries do not reparse '-program' as an option."""
     if shutil.which(tool) is None or (needs_tty and shutil.which("script") is None):
         pytest.skip(f"{tool} or script is not installed")
+    if sys.platform == "darwin" and tool in {"sort", "man"}:
+        pytest.skip(f"{tool} uses BSD option semantics on macOS")
 
     marker = tmp_path / "executed"
     payload = tmp_path / "-payload-marker"

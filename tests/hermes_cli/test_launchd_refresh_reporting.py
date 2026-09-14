@@ -117,6 +117,34 @@ def test_launchd_start_unchanged_plist_uses_normal_kickstart(tmp_path, monkeypat
     assert "✓ Service started" in capsys.readouterr().out
 
 
+def test_launchctl_kickstart_current_captures_expected_unloaded_diagnostic(monkeypatch):
+    """An expected unloaded-job miss must not leak launchctl stderr to the terminal."""
+    calls = []
+
+    monkeypatch.setattr(gw, "_launchd_domain", lambda: "gui/501")
+    monkeypatch.setattr(
+        gw.subprocess,
+        "run",
+        lambda argv, **kwargs: calls.append((argv, kwargs)) or MagicMock(returncode=0),
+    )
+
+    gw._launchctl_kickstart_current("ai.hermes.gateway")
+
+    assert calls == [
+        (
+            ["launchctl", "kickstart", "gui/501/ai.hermes.gateway"],
+            {
+                "check": True,
+                "timeout": 30,
+                "capture_output": True,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+            },
+        )
+    ]
+
+
 def test_launchd_stop_waits_until_bootout_registration_is_gone(monkeypatch, capsys):
     """A completed process exit is insufficient while launchd still owns the label."""
     waited = []

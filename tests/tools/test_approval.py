@@ -116,14 +116,19 @@ class TestDetectDangerousRm:
 
     def test_nonrecursive_verification_artifact_cleanup_is_not_dangerous(self):
         with mock_patch("tempfile.gettempdir", return_value="/tmp"):
+            temp_dir = os.path.realpath("/tmp")
             for prefix in ("hermes-verify-", "hermes-ad-hoc-"):
-                assert detect_dangerous_command(f"rm -f /tmp/{prefix}example.py") == (
+                assert detect_dangerous_command(
+                    f"rm -f {temp_dir}/{prefix}example.py"
+                ) == (
                     False,
                     None,
                     None,
                 )
 
     def test_symlinked_temp_dir_only_exempts_canonical_target(self, tmp_path):
+        from tools.approval_detection import _is_verification_artifact_cleanup
+
         real_temp = tmp_path / "real-temp"
         real_temp.mkdir()
         linked_temp = tmp_path / "linked-temp"
@@ -131,11 +136,11 @@ class TestDetectDangerousRm:
         basename = "hermes-verify-example.py"
 
         with mock_patch("tempfile.gettempdir", return_value=str(linked_temp)):
-            assert detect_dangerous_command(f"rm -f {linked_temp / basename}")[0] is True
-            assert detect_dangerous_command(f"rm -f {real_temp / basename}") == (
-                False,
-                None,
-                None,
+            assert not _is_verification_artifact_cleanup(
+                f"rm -f {linked_temp / basename}"
+            )
+            assert _is_verification_artifact_cleanup(
+                f"rm -f {real_temp / basename}"
             )
 
     def test_verification_cleanup_exemption_rejects_broader_deletions(self):

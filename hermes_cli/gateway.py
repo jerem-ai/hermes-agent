@@ -4246,7 +4246,15 @@ def launchd_start():
 
 
 def _launchctl_kickstart_current(label: str) -> None:
-    subprocess.run(["launchctl", "kickstart", f"{_launchd_domain()}/{label}"], check=True, timeout=30)
+    # An unloaded job is an expected recovery case for ``gateway restart``.
+    # Capture launchctl's diagnostic so the caller can classify the non-zero
+    # exit without leaking a misleading error to the operator's stderr.
+    subprocess.run(
+        ["launchctl", "kickstart", f"{_launchd_domain()}/{label}"],
+        check=True,
+        timeout=30,
+        **_CAPTURE_TEXT,
+    )
 
 
 def _launchd_bootstrap_and_kickstart(plist_path: Path, label: str) -> bool:
@@ -4272,6 +4280,7 @@ def launchd_stop():
     target = f"{domain}/{label}"
     _mark_planned_stop()
     # bootout unloads the definition so KeepAlive doesn't respawn; `hermes gateway start` re-bootstraps.
+    already_unloaded = False
     try:
         # Captured: an already-unloaded job (3/113/125) is handled below, so launchctl's own
         # "Boot-out failed: 3" must not print around the ✓ line; e.stderr stays on the raised error.
@@ -4282,12 +4291,13 @@ def launchd_stop():
         # below.
         if not (_launchd_error_indicates_unloaded(e) or _launchctl_domain_unsupported(e.returncode)):
             raise
+        already_unloaded = True
     _wait_for_gateway_exit(timeout=10.0, force_after=5.0)
     # ``bootout`` may return before launchd finishes removing the job. Starting
     # it during that window can make ``kickstart`` return success against the
     # dying registration, after which the pending bootout removes the freshly
     # started gateway. This was reproducible through ``gateway restart --all``.
-    if not _wait_for_launchd_service_unloaded(domain, label, timeout=10.0):
+    if not already_unloaded and not _wait_for_launchd_service_unloaded(domain, label, timeout=10.0):
         raise RuntimeError(
             f"launchd did not finish unloading {target}; refusing to report a completed stop"
         )
@@ -6399,7 +6409,44 @@ def _cmd_stop(args):
         print(f"✓ Stopped {get_service_name()} service")
 
 
+def _wait_for_profile_gateway_replacements(
+    previous_pids: dict[str, int], timeout: float = 30.0, *, poll_interval: float = 0.2
+) -> list[str]:
+    """Wait for every previously running named profile to own a fresh PID.
+
+    launchd may acknowledge the default gateway start before the named profile
+    jobs it also killed have respawned. Returning during that gap makes an
+    immediate ``gateway list`` report the fleet offline even though launchd is
+    still recovering it. The old PID is rejected so a failed kill cannot look
+    ready.
+
+    Returns the profile names that did not become ready before the deadline.
+    """
+    pending = set(previous_pids)
+    deadline = time.monotonic() + max(timeout, 0.0)
+    while pending:
+        current = {
+            process.profile: process.pid
+            for process in find_profile_gateway_processes()
+        }
+        pending = {
+            profile
+            for profile in pending
+            if current.get(profile) in (None, previous_pids[profile])
+        }
+        if not pending or time.monotonic() >= deadline:
+            break
+        time.sleep(max(poll_interval, 0.01))
+    return sorted(pending)
+
+
 def _restart_all(system: bool) -> None:
+    kind = _installed_service_kind_for(is_windows)
+    previous_profile_pids = (
+        {process.profile: process.pid for process in find_profile_gateway_processes()}
+        if kind == "launchd"
+        else {}
+    )
     service_stopped = _stop_installed_service(system)
     total = kill_gateway_processes(all_profiles=True) + (1 if service_stopped else 0)
     if total:
@@ -6408,11 +6455,17 @@ def _restart_all(system: bool) -> None:
 
     print("Starting gateway...")
     # Even without a registered task, gateway_windows.start() uses the detached launcher.
-    kind = _installed_service_kind_for(is_windows)
     if kind is None:
         run_gateway(verbose=0)
     else:
         _service_call(kind, "start", system)
+    if kind == "launchd" and previous_profile_pids:
+        missing = _wait_for_profile_gateway_replacements(previous_profile_pids)
+        if missing:
+            raise RuntimeError(
+                "launchd restarted the default gateway but these named profiles "
+                f"did not recover: {', '.join(missing)}"
+            )
 
 
 def _cmd_restart(args):
