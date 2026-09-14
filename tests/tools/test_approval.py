@@ -971,6 +971,44 @@ class TestWebhookApprovalExclusion:
         assert result["approved"] is False
         assert "api_server" in result["message"]
 
+    def test_api_server_with_registered_bridge_is_gateway_context(self, monkeypatch):
+        """A /v1/runs-style approval callback makes that API turn attended."""
+        import tools.approval as approval_mod
+        from tools.approval import _is_gateway_approval_context
+
+        monkeypatch.delenv("HERMES_CRON_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.setenv("HERMES_SESSION_PLATFORM", "api_server")
+        monkeypatch.setenv("HERMES_SESSION_KEY", "test-api-bridged")
+        approval_mod.register_gateway_notify("test-api-bridged", lambda _data: None)
+        try:
+            assert _is_gateway_approval_context() is True
+        finally:
+            approval_mod.unregister_gateway_notify("test-api-bridged")
+
+    def test_api_server_with_registered_bridge_can_approve_dangerous_command(self, monkeypatch):
+        """The bridged API path presents and resolves the normal human gate."""
+        import tools.approval as approval_mod
+        from tools.approval import check_all_command_guards
+
+        self._isolate(monkeypatch)
+        monkeypatch.delenv("HERMES_CRON_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.setenv("HERMES_SESSION_PLATFORM", "api_server")
+        monkeypatch.setenv("HERMES_SESSION_KEY", "test-api-bridged-gate")
+
+        def approve(_data):
+            assert approval_mod.resolve_gateway_approval("test-api-bridged-gate", "once") == 1
+
+        approval_mod.register_gateway_notify("test-api-bridged-gate", approve)
+        try:
+            result = check_all_command_guards("sudo systemctl restart nginx", "local")
+        finally:
+            approval_mod.unregister_gateway_notify("test-api-bridged-gate")
+
+        assert result["approved"] is True
+
     def test_execute_code_denied_on_unattended_platform(self, monkeypatch):
         """execute_code is denied instantly on unattended platforms (parity with cron)."""
         from tools.approval import check_execute_code_guard
