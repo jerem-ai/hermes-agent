@@ -4211,7 +4211,28 @@ def launchd_start():
             _launchd_ok("✓ Service started")
         return
 
-    refresh_launchd_plist_if_needed()
+    # A stale plist is reloaded by a transient launchd helper when a gateway is
+    # still running. Do not race that helper with a kickstart of the old job:
+    # the helper deliberately boots that job out a moment later, which used to
+    # leave ``gateway restart --all`` reporting success while the default
+    # profile was actually offline. Wait for the replacement PID instead.
+    from gateway.status import get_running_pid
+    old_pid = get_running_pid(cleanup_stale=False)
+    refreshed = refresh_launchd_plist_if_needed()
+    if refreshed:
+        domain = _launchd_domain()
+        if old_pid is not None:
+            ready = _wait_for_launchd_service_pid(
+                label, old_pid, timeout=_launchd_reload_budget() + 5.0, domain=domain)
+        else:
+            ready = wait_for_launchd_gateway_supervision(label=label)
+        if not ready:
+            print_error(
+                "launchd reloaded the gateway definition but did not supervise a replacement process."
+            )
+            sys.exit(1)
+        _launchd_ok("✓ Service started")
+        return
     try:
         _launchctl_kickstart_current(label)
     except subprocess.CalledProcessError as e:
@@ -4246,7 +4267,9 @@ def _launchd_ok(message: str) -> None:
 
 
 def launchd_stop():
-    target = f"{_launchd_domain()}/{get_launchd_label()}"
+    domain = _launchd_domain()
+    label = get_launchd_label()
+    target = f"{domain}/{label}"
     _mark_planned_stop()
     # bootout unloads the definition so KeepAlive doesn't respawn; `hermes gateway start` re-bootstraps.
     try:
@@ -4260,6 +4283,14 @@ def launchd_stop():
         if not (_launchd_error_indicates_unloaded(e) or _launchctl_domain_unsupported(e.returncode)):
             raise
     _wait_for_gateway_exit(timeout=10.0, force_after=5.0)
+    # ``bootout`` may return before launchd finishes removing the job. Starting
+    # it during that window can make ``kickstart`` return success against the
+    # dying registration, after which the pending bootout removes the freshly
+    # started gateway. This was reproducible through ``gateway restart --all``.
+    if not _wait_for_launchd_service_unloaded(domain, label, timeout=10.0):
+        raise RuntimeError(
+            f"launchd did not finish unloading {target}; refusing to report a completed stop"
+        )
     print("✓ Service stopped")
 
 
@@ -4313,6 +4344,20 @@ def _wait_for_launchd_service_pid(
         if time.monotonic() >= deadline:
             return False
         time.sleep(0.5)
+
+
+def _wait_for_launchd_service_unloaded(
+    domain: str, label: str, timeout: float = 10.0, *, poll_interval: float = 0.2
+) -> bool:
+    """Wait until ``bootout`` removes the exact launchd registration."""
+    deadline = time.monotonic() + max(timeout, 0.0)
+    while True:
+        loaded, _pid = _launchd_print_service_pid(domain, label)
+        if not loaded:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(max(poll_interval, 0.01))
 
 
 def launchd_restart():
