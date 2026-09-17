@@ -1483,6 +1483,7 @@ def _handle_terminal(args, **kw):
         notify_on_complete=notify_on_complete,
         watch_patterns=watch_patterns,
         heartbeat=heartbeat,
+        force=bool(kw.get("approved_recovery", False)),
     )
 
 
