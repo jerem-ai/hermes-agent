@@ -3495,7 +3495,7 @@ from hermes_cli.gateway_launchd import (  # noqa: E402,F401 — facade re-export
     launchd_install,
     launchd_uninstall,
     launchd_start,
-    _launchctl_kickstart_current,
+    _launchctl_kickstart_current, _wait_for_launchd_service_unloaded,
     _launchd_bootstrap_and_kickstart,
     _launchd_ok,
     launchd_stop,
