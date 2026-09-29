@@ -623,6 +623,7 @@ class TestRunEvents:
                 assert completed["usage"]["cache_read_tokens"] == 650000
                 assert completed["usage"]["cache_write_tokens"] == 42
 
+    @pytest.mark.asyncio
     async def test_event_cursor_replays_only_missed_events_after_adapter_restart(self, tmp_path):
         """Contract: Last-Event-ID resumes a durable idempotent run after replacement."""
         path = tmp_path / "idem.db"

@@ -1542,7 +1542,8 @@ async def _execute_recovery_run(self, plan: Dict[str, Any], *, q, _api_server) -
             final_approval_notify = _make_approval_notify(
                 self, final_run, _api_server=_api_server
             )
-            result, usage = await loop.run_in_executor(
+            # v0.21.5 returns (result, usage, served_runtime); recovery keeps usage only.
+            result, usage, _served_runtime = await loop.run_in_executor(
                 None,
                 lambda: _run_agent_sync(
                     self,
