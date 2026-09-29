@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.usage_pricing import CanonicalUsage, estimate_usage_cost, format_cost_label, format_duration_compact, has_known_pricing
 from hermes_cli.timefmt import coerce_epoch
+from agent.insights_external import read_combined_usage, format_combined_usage
 
 _TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
 _SKILL_TOOLS = {"skill_view", "skill_manage"}
@@ -171,6 +172,7 @@ class InsightsEngine:
 
     def generate(self, days: int = 30, source: str = None) -> Dict[str, Any]:
         """Generate a complete insights report for the last ``days`` days, optionally filtered by source platform."""
+        combined = read_combined_usage(days, source)
         cutoff = time.time() - (days * 86400)
         # Drain the SessionDB's async accounting queue so counters are exact
         # (self.db may be a raw sqlite3 connection in tests — guard).
@@ -182,11 +184,11 @@ class InsightsEngine:
         skill_usage = self._get_skill_usage(cutoff, source)
         message_stats = self._get_message_stats(cutoff, source)
         if not sessions:
-            return {"days": days, "source_filter": source, "empty": True, "overview": {}, "models": [], "platforms": [], "tools": [],
+            return {"days": days, "combined_usage": combined, "source_filter": source, "empty": True, "overview": {}, "models": [], "platforms": [], "tools": [],
                     "skills": self._compute_skill_breakdown([]), "activity": {}, "top_sessions": []}
         models = self._compute_model_breakdown(sessions, cutoff, source)
         return {
-            "days": days, "source_filter": source, "empty": False, "generated_at": time.time(),
+            "days": days, "combined_usage": combined, "source_filter": source, "empty": False, "generated_at": time.time(),
             "overview": self._compute_overview(sessions, message_stats, models),
             "models": models,
             "platforms": self._compute_platform_breakdown(sessions),
@@ -472,7 +474,7 @@ class InsightsEngine:
         """Format the insights report for terminal display (CLI)."""
         if report.get("empty"):
             src = f" (source: {report['source_filter']})" if report.get("source_filter") else ""
-            return f"  No sessions found in the last {report.get('days', 30)} days{src}."
+            return f"  No sessions found in the last {report.get('days', 30)} days{src}." + format_combined_usage(report.get("combined_usage"))
         o = report["overview"]
         period_label = f"Last {report['days']} days"
         if report.get("source_filter"):
@@ -545,12 +547,12 @@ class InsightsEngine:
         if report.get("top_sessions"):
             lines += self._section("🏆 Notable Sessions")
             lines += [f"  {ts['label']:<20} {ts['value']:<18} ({ts['date']}, {ts['session_id']})" for ts in report["top_sessions"]] + [""]
-        return "\n".join(lines)
+        return "\n".join(lines) + format_combined_usage(report.get("combined_usage"))
 
     def format_gateway(self, report: Dict) -> str:
         """Format the insights report for gateway/messaging (shorter)."""
         if report.get("empty"):
-            return f"No sessions found in the last {report.get('days', 30)} days."
+            return f"No sessions found in the last {report.get('days', 30)} days." + format_combined_usage(report.get("combined_usage"))
         o = report["overview"]
         lines = [
             f"📊 **Hermes Insights** — Last {report['days']} days\n",
@@ -583,4 +585,4 @@ class InsightsEngine:
                 lines.append(f"**Active days:** {act['active_days']}")
             if act.get("max_streak", 0) > 1:
                 lines.append(f"**Best streak:** {act['max_streak']} consecutive days")
-        return "\n".join(lines)
+        return "\n".join(lines) + format_combined_usage(report.get("combined_usage"))
