@@ -35,6 +35,7 @@ MUTATOR_ROUTE_TABLE: dict[str, str] = {
 _REGISTRY_NAME = "dashboard-compute-host.json"
 _RESPAWN_WINDOW_SECS = 300.0
 _SHUTDOWN_TIMEOUT_SECS = 10.0
+_STARTUP_TIMEOUT_SECS = 30.0
 # Late control-ack handlers: a compress that outlives its RPC waiter can run for the full
 # compression ceiling plus a stall-fallback retry, so keep registrations past that — bounded.
 # See #97948.
@@ -327,7 +328,11 @@ class HostSupervisor:
                              (self._drain_stderr, "compute-host-stderr"),
                              (self._wait_for_exit, "compute-host-wait")):
             threading.Thread(target=target, args=(proc,), name=name, daemon=True).start()
-        if not self._hello_event.wait(timeout=10.0):
+        # Importing the agent stack can exceed ten seconds when the host is
+        # already saturated by local work. The child has emitted no usable
+        # output until this handshake, so give startup the same bounded room
+        # other local subprocess surfaces receive.
+        if not self._hello_event.wait(timeout=_STARTUP_TIMEOUT_SECS):
             self._terminate_process(proc)
             raise RuntimeError(f"compute host did not send hello; stderr={self._stderr_tail[-5:]}")
         self._validate_hello()

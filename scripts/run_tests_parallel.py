@@ -145,6 +145,32 @@ _DEFAULT_FILE_RETRIES = 1
 # CI jobs by estimated total time, so no one job gets all the slow files.
 _DURATIONS_FILE = "test_durations.json"
 
+# macOS login shells commonly inherit a 256-descriptor soft limit.  The
+# isolated API-server files legitimately create and close hundreds of loopback
+# sockets over one pytest process; at 256, teardown can hit EMFILE even though
+# the same file passes under Linux CI's higher default.  Raise only the soft
+# limit for this test runner, never past the host's hard ceiling.
+_MIN_OPEN_FILE_LIMIT = 4096
+
+
+def _raise_open_file_limit(minimum: int = _MIN_OPEN_FILE_LIMIT) -> bool:
+    """Give test subprocesses a CI-sized descriptor budget when supported."""
+    if sys.platform == "win32":
+        return False
+    try:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft >= minimum:
+            return True
+        target = minimum if hard == resource.RLIM_INFINITY else min(minimum, hard)
+        if target <= soft:
+            return False
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+        return resource.getrlimit(resource.RLIMIT_NOFILE)[0] >= target
+    except (ImportError, OSError, ValueError):
+        return False
+
 
 def _split_pathspec(value: str) -> List[str]:
     """Split a separator-joined path list (``--paths``/``--files``/
@@ -964,6 +990,7 @@ def _pytest_flag_error(tokens: List[str]) -> Optional[str]:
 
 def main() -> int:
     _make_stdio_glyph_safe()
+    _raise_open_file_limit()
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,

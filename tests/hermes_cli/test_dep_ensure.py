@@ -96,6 +96,29 @@ def test_find_agent_browser_lazy_install_cycle_terminates(monkeypatch):
     assert validate_calls == [True, False]
 
 
+def test_ensure_dependency_does_not_install_inside_test_isolation(tmp_path, monkeypatch):
+    """A missing dependency must never let a test installer mutate the real user home."""
+    from hermes_cli import dep_ensure
+
+    script = tmp_path / "install.sh"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    run_calls = []
+    monkeypatch.setattr(dep_ensure, "_DEP_CHECKS", {"node": lambda: False})
+    monkeypatch.setattr(dep_ensure, "_find_install_script", lambda: (script, "bash"))
+    monkeypatch.setattr(dep_ensure.subprocess, "run", lambda *args, **kwargs: run_calls.append((args, kwargs)))
+
+    assert dep_ensure.ensure_dependency("node", interactive=False) is False
+    assert run_calls == []
+
+
+def test_ensure_dependency_accepts_present_dependency_inside_test_isolation(monkeypatch):
+    """Isolation blocks writes, while a correct but unusual preinstalled dependency stays usable."""
+    from hermes_cli import dep_ensure
+
+    monkeypatch.setattr(dep_ensure, "_DEP_CHECKS", {"node": lambda: True})
+    assert dep_ensure.ensure_dependency("node", interactive=False) is True
+
+
 @pytest.mark.windows_only
 def test_ensure_dependency_uses_powershell_on_windows(tmp_path):
     """``windows_only``: the assertion is that we shell out to a real

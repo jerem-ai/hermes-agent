@@ -57,3 +57,46 @@ def test_glyph_safe_stdio_noop_without_reconfigure(monkeypatch) -> None:
     print("✓ still fine")
 
     assert "✓ still fine" in plain.getvalue()
+
+
+def test_open_file_limit_raises_low_soft_ceiling(monkeypatch) -> None:
+    mod = _load_runner()
+
+    class FakeResource:
+        RLIMIT_NOFILE = 7
+        RLIM_INFINITY = -1
+
+        def __init__(self):
+            self.limit = (256, 8192)
+
+        def getrlimit(self, _kind):
+            return self.limit
+
+        def setrlimit(self, _kind, value):
+            self.limit = value
+
+    fake = FakeResource()
+    monkeypatch.setitem(sys.modules, "resource", fake)
+
+    assert mod._raise_open_file_limit(4096) is True
+    assert fake.limit == (4096, 8192)
+
+
+def test_open_file_limit_preserves_adequate_soft_ceiling(monkeypatch) -> None:
+    mod = _load_runner()
+
+    class FakeResource:
+        RLIMIT_NOFILE = 7
+        RLIM_INFINITY = -1
+
+        @staticmethod
+        def getrlimit(_kind):
+            return (8192, 8192)
+
+        @staticmethod
+        def setrlimit(_kind, _value):
+            raise AssertionError("an adequate limit must remain untouched")
+
+    monkeypatch.setitem(sys.modules, "resource", FakeResource())
+
+    assert mod._raise_open_file_limit(4096) is True
