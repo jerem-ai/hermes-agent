@@ -34,6 +34,7 @@ from tools.file_tools_write_guards import (
     _check_cross_profile_path, _check_protected_instruction_write, _check_sensitive_path,
     _is_internal_file_tool_content, _stale_overwrite_blocker, _stale_write_refusal)
 from tools.file_tools_read_tracking import (
+    _programmatic_file_read,
     _bump_consecutive, _cap_read_tracker_data, _check_file_staleness, _check_not_found_cache,
     _file_metadata, _file_version,
     _mark_full_write_baseline, _mark_verification_stale, _note_read_coverage, _patch_failure_lock,
@@ -555,7 +556,8 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
         except OSError:
             pass
         baselines = task_data["full_write_baselines"]
-        if stable and version is not None and count < 4:
+        within_read_limit = count < 4 or _programmatic_file_read.get()
+        if stable and version is not None and within_read_limit:
             task_data["dedup"][dedup_key] = version_before
             # A narrower view does not undo knowledge of these same bytes. Do
             # not revive a baseline after a partial read of a different version.
@@ -570,7 +572,7 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
                 baselines[resolved_str] = version
         if not complete:
             baselines.pop(resolved_str, None)
-        if not stable or count >= 4:
+        if not stable or not within_read_limit:
             task_data["dedup"].pop(dedup_key, None)
             task_data["dedup_generation_reads"].discard(dedup_key)
         _cap_read_tracker_data(task_data)
@@ -671,7 +673,8 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
         # read-before-write guard needs a real read, which the stub path never records (#95976).
         file_ops = _get_file_ops(task_id)
         version_before = _file_metadata(resolved_str) if _file_ops_uses_host_paths(file_ops) else None
-        if (cached_version is not None and not is_background_review()
+        programmatic_read = _programmatic_file_read.get()
+        if (cached_version is not None and not is_background_review() and not programmatic_read
                 and version_before == cached_version and content_served_in_generation):
             return _dedup_stub_or_block(task_data, dedup_key, path)
 
@@ -730,7 +733,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                                         end_line=end_line, total_lines=total_lines,
                                         version_before=version_before,
                                         snapshot=getattr(result, "_snapshot", None))
-        if count >= 4:
+        if count >= 4 and not programmatic_read:
             return tool_error(
                 f"BLOCKED: You have read this exact file region {count} times in a row. "
                 "The content has NOT changed. You already have this information. "
@@ -738,7 +741,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                 path=path,
                 already_read=count,
                 **{GUARDRAIL_REFUSAL_KEY: True})
-        if count >= 3:
+        if count >= 3 and not programmatic_read:
             result_dict["_warning"] = (
                 f"You have read this exact file region {count} times consecutively. "
                 "The content has not changed since your last read. Use the information you already have. "

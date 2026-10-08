@@ -22,11 +22,30 @@ import os
 import stat
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from tools.file_state import _evict_oldest
 from tools.file_tools_paths import _authoritative_workspace_root, _resolve_path_for_task
 
 logger = logging.getLogger("tools.file_tools")
+
+_programmatic_file_read = ContextVar("programmatic_file_read", default=False)
+
+
+@contextmanager
+def programmatic_file_read_scope():
+    """Python needs file bytes even when the chat has already seen them.
+
+    This scope is entered by host-side RPC dispatch, never by model arguments.
+    File access checks and read/write baselines still run normally.
+    """
+    token = _programmatic_file_read.set(True)
+    try:
+        yield
+    finally:
+        _programmatic_file_read.reset(token)
+
 
 _read_tracker_lock = threading.Lock()
 _read_tracker: dict = {}
