@@ -1,6 +1,7 @@
 """Discovery cycles longer than four terminal reads must still be bounded."""
 import json
 import pytest
+from tests.agent.test_tool_call_guardrail_runtime import _make_agent, _mock_response, _mock_tool_call
 from agent.tool_guardrails import ToolCallGuardrailConfig, ToolCallGuardrailController
 
 
@@ -36,7 +37,6 @@ def test_changed_evidence_and_legitimate_poll_cycles_continue(changed, poll):
 
 def test_long_discovery_cycle_halts_real_turn_before_more_provider_calls():
     from unittest.mock import patch
-    from tests.agent.test_tool_call_guardrail_runtime import _make_agent, _mock_response, _mock_tool_call
     agent = _make_agent('terminal', max_iterations=45, platform='bluebubbles')
     agent._disable_streaming = True
     responses = [_mock_response(content='', finish_reason='tool_calls', tool_calls=[
