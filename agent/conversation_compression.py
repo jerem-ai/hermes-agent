@@ -3062,8 +3062,7 @@ def _run_summary_dispatch(
 def _fold_todo_snapshot(agent: Any, compressed: list) -> None:
     """Strip stale todo snapshots from ``compressed`` and fold the live one in (in place)."""
     todo_snapshot = agent._todo_store.format_for_injection()
-    # Non-empty store (even all done) is authoritative: drop the old snapshot. A
-    # truly empty store may be un-rehydrated post-compaction: keep the snapshot.
+    # Preserve old snapshots only when the live store has not been rehydrated.
     _todo_has_items = getattr(agent._todo_store, "has_items", None)
     # Store may implement only format_for_injection(); unknown authority must
     # preserve the pending snapshot rather than risk deleting it.
@@ -4313,7 +4312,8 @@ def compress_context(
                 "Compression: engine folded away the just-delivered assistant reply; reinserted it into the "
                 "active set (session=%s).", agent.session_id or "none",
             )
-        _fold_todo_snapshot(agent, compressed)
+        from agent.acceptance_contract import fold_snapshots
+        fold_snapshots(agent, compressed, _fold_todo_snapshot)
         compressed_user_turn_outcome = _ensure_compressed_has_user_turn(messages, compressed)
         new_system_prompt = _rebuild_system_prompt_at_boundary(agent, system_message)
         commit = _commit_compaction(

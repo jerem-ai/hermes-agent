@@ -57,6 +57,7 @@ class StreamDeliveryMixin:
         self._native_reasoning_streamed = False
         # Next stream re-reads plugins.stream_reasoning_deltas (config edits land per request).
         self._stream_reasoning_hooks_enabled = None
+        self._acceptance_stream_guard = None
 
         def deliver(tail: str) -> None:
             if tail:
@@ -293,6 +294,8 @@ class StreamDeliveryMixin:
         self._enqueue_stream_hook("on_stream_start")
 
     def _emit_stream_end(self, *, final_text: str, finished: bool, error: str | None) -> None:
+        from agent.acceptance_contract import enforce_final
+        final_text, _ = enforce_final(self, final_text, {})
         self._enqueue_stream_hook("on_stream_end", final_text=final_text, finished=finished, error=error)
 
     def _fire_stream_delta(self, text: str) -> None:
@@ -302,6 +305,11 @@ class StreamDeliveryMixin:
             # See #65991.
             self._note_dropped_stream_writer("_fire_stream_delta")
             return
+        if getattr(self, "_acceptance_stream_guard", None) is None:
+            from agent.acceptance_contract import guarded
+            self._acceptance_stream_guard = guarded(self)
+        if self._acceptance_stream_guard:
+            return  # Contracted sessions deliver their checked final answer once.
         # One paragraph break before the first text delta after a tool iteration, without
         # stacking blank lines across back-to-back tool iterations.
         prepended_break = bool(getattr(self, "_stream_needs_break", False) and text and text.strip())

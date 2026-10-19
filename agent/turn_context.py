@@ -1180,6 +1180,10 @@ def build_turn_context(
     plugin_user_context = _merge_gateway_notes(
         agent, messages, current_turn_user_idx, plugin_user_context
     )
+    from agent.acceptance_contract import context as acceptance_context
+    plugin_user_context = "\n\n".join(
+        part for part in (plugin_user_context, acceptance_context(agent)) if part
+    )
 
     _bind_interrupt_scope(agent, ra)
     ext_prefetch_cache = _memory_turn_start_and_prefetch(agent, original_user_message, turn_author)

@@ -409,6 +409,9 @@ def finish_text_response(
     ):
         messages.pop()
 
+    from agent.acceptance_contract import enforce_final
+    final_response, _contract_blocked = enforce_final(agent, final_response, final_msg)
+
     _sg = apply_stop_gates(
         agent, final_msg, final_response=final_response, messages=messages,
         conversation_history=conversation_history,
@@ -431,11 +434,8 @@ def finish_text_response(
         final_response, _transformed, _ = apply_llm_output_transform(
             agent, final_response, turn_id=getattr(agent, "_current_turn_id", "") or "", logger=logger,
         )
-    if _transformed:
-        if _promoted:
-            final_msg["api_content"] = final_response
-        else:
-            final_msg["content"] = final_response
+    from agent.acceptance_contract import reconcile_output
+    final_response = reconcile_output(agent, final_response, final_msg, _promoted, _transformed)
 
     append_message(messages, final_msg)
     # Make the answer durable before leaving the loop (_DB_PERSISTED_MARKER keeps

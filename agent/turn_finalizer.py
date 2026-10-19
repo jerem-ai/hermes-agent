@@ -464,6 +464,8 @@ def _apply_output_hooks(
     final_response, transformed, pre_transform = apply_llm_output_transform(
         agent, final_response, turn_id=turn_id, platform=platform, logger=logger,
     )
+    from agent.acceptance_contract import enforce_final
+    final_response, _ = enforce_final(agent, final_response, {})
     # Detached forks are internal work and must not publish turns under the parent's session ID.
     if not getattr(agent, "_persist_disabled", False):
         _invoke_hook_safely(
@@ -691,6 +693,8 @@ def finalize_turn(
         if final_response and not interrupted:
             final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
             final_response = _sanitize_surrogates(final_response)
+            from agent.acceptance_contract import enforce_final
+            final_response, _ = enforce_final(agent, final_response, {})
         final_response, _persist_saved = _persist_final_transcript(
             agent, messages, final_response, interrupted, failed, turn_id,
             _owned_row, effective_task_id, conversation_history, logger, _recovered_from_stream,
