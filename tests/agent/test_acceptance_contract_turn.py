@@ -97,3 +97,19 @@ def test_yes_cannot_certify_the_original_assignment(guard_agent, tmp_path):
     result, effects = _run(agent, "So everything is done?", [_final("Yes.")])
     assert "parent objective remains open" in result["final_response"]
     assert effects == 0
+
+
+def test_cli_status_resolves_compressed_session_lineage(guard_agent, tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    from hermes_cli.acceptance_contract import main
+    agent, db = guard_agent
+    attach(agent, make_spec(tmp_path))
+    db.ensure_session(agent.session_id, source="bluebubbles")
+    db.create_session("cli-child", source="bluebubbles", parent_session_id=agent.session_id)
+    monkeypatch.setenv("HERMES_HOME", str(db.db_path.parent))
+    monkeypatch.setattr(sys, "argv", ["acceptance-contract", "--session", "cli-child", "status"])
+    main()
+    output = capsys.readouterr().out
+    report = json.loads(output[output.index("{"):])
+    assert report["tasks"]["implementation"]["complete"] is False
