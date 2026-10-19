@@ -353,8 +353,7 @@ def _append_skipped_tool_results(
 
 
 def _tool_search_scoped_names(agent) -> frozenset:
-    """Deferrable tool names the session may invoke via ``tool_call``; the unwrap bypasses
-    the bridge's scope check in ``model_tools.handle_function_call``, so restricted sessions
+    """Deferrable tool names the session may invoke via ``tool_call``. Restricted sessions
     validate against this set. Cached on the agent, keyed by registry scope/generation."""
     try:
         import model_tools
@@ -370,6 +369,7 @@ def _tool_search_scoped_names(agent) -> frozenset:
         getattr(_registry, "_generation", 0),
         frozenset(enabled) if enabled is not None else None,
         frozenset(disabled) if disabled is not None else None,
+        _ts.load_config_readonly().effective_defer_tools,
     )
     cached = getattr(agent, "_tool_search_scope_cache", None)
     if cached is not None and cached[0] == cache_key:

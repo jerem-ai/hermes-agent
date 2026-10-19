@@ -403,6 +403,18 @@ skills:
 The dashboard's Browse-hub scan button returns the same advisory data in
 its response (`tier1` field) alongside the built-in scanner's verdict.
 
+## Compact skill index
+
+Set `skills.index_mode: names` to keep every available skill name in the initial
+prompt while loading descriptions through `skills_list(category)` when needed.
+`skill_view(name)` still returns the full instructions. The default, `full`,
+includes descriptions in the index. This changes presentation only; skill
+availability, precedence, trust and disabled-skill rules remain in effect.
+
+The setting belongs to the selected profile. It takes effect on a new prompt
+build; existing conversation prefixes remain cached. Skill changes during a
+conversation still arrive through the existing turn-note channel.
+
 ## External Skill Directories
 
 If you maintain skills outside of Hermes — for example, a shared `~/.agents/skills/` directory used by multiple AI tools — you can tell Hermes to scan those directories too.

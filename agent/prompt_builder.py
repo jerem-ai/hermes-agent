@@ -1443,10 +1443,11 @@ def _render_skills_index(
     # Demoted categories collapse to one names-only line. NEVER drop entries — agent-created skills are the
     # model's project memory and it won't rediscover them via skills_list. Nested categories follow their parent.
     demoted = frozenset(cat for cat in skills_by_category if cat.split("/", 1)[0] in (compact_categories or frozenset()))
+    description_lookup = ("Use skills_list(category) to read descriptions when the right skill is unclear. "
+                          if available_tools is None or "skills_list" in available_tools else "")
     hidden_note = (
-        "\n(Categories marked [names only] are outside the current coding "
-        "context, so their descriptions are omitted — the skills work "
-        "normally and load with skill_view(name) as usual.)"
+        "\n(Categories marked [names only] retain every available skill. "
+        + description_lookup + "Load full instructions with skill_view(name).)"
     ) if demoted else ""
     if unloadable:
         hidden_note += (f"\n(A copy of {', '.join(unloadable)} is not listed: it shares both its name and its path "
@@ -1508,6 +1509,7 @@ def _build_skills_system_prompt_inner(
 ) -> str:
     # The resolved platform is part of the key: per-platform disabled-skill lists need distinct cache entries.
     _platform_hint = _current_session_platform_hint()
+    index_mode = (_config_readonly("skills.index_mode").get("skills") or {}).get("index_mode", "full")
     disabled = get_disabled_skill_names(_platform_hint or None)
     # Plugin-registered skills (ctx.register_skill) are registry state, not files under any scanned
     # root — the snapshot manifest can't see them change, so they participate in the cache key.
@@ -1523,7 +1525,7 @@ def _build_skills_system_prompt_inner(
         tuple(sorted(str(t) for t in (available_tools or set()))),
         tuple(sorted(str(ts) for ts in (available_toolsets or set()))),
         _platform_hint, tuple(sorted(disabled)), tuple(sorted(compact_categories or ())),
-        _oneshot_prompt_variant(), tuple(plugin_rows),
+        _oneshot_prompt_variant(), tuple(plugin_rows), index_mode == "names",
     )
     snapshot = _load_skills_snapshot(skills_dir, manifest)
     app_gated = snapshot is not None and any(
@@ -1593,6 +1595,8 @@ def _build_skills_system_prompt_inner(
             logger.debug("Could not write skills prompt snapshot: %s", e)
 
     unloadable = sorted({e["name"] for e in visible_entries if not e["load_name"]})
+    if index_mode == "names":
+        compact_categories = frozenset(category.split("/", 1)[0] for category in skills_by_category)
     result = _render_skills_index(skills_by_category, category_descriptions, compact_categories, available_tools, unloadable)
     with _SKILLS_PROMPT_CACHE_LOCK:
         _SKILLS_PROMPT_CACHE[cache_key] = result

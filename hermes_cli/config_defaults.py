@@ -1446,6 +1446,7 @@ DEFAULT_CONFIG = {
     # Skills — external skill directories shared across tools/agents. Paths are expanded (~, ${VAR})
     # and resolved; read-only — creation goes to ~/.hermes/skills/ unless create_dir redirects it.
     "skills": {
+        "index_mode": "full",  # "names" keeps the catalog; skills_list supplies descriptions.
         "external_dirs": [],   # e.g. ["~/.agents/skills", "/shared/team-skills"]
         # Where skill_manage-created skills go (empty = profile-local dir). When set, new skills
         # land here AND agent-facing instructions name this path; expanded (~, ${VAR}), relative to
@@ -1457,8 +1458,7 @@ DEFAULT_CONFIG = {
         "project_discovery": True,
         # Trusted project roots; managed by `hermes skills trust` / `untrust`.
         "trusted_project_dirs": [],
-        # Skill names pinned as fully loaded in every new session (CLI, TUI, gateway, cron, API).
-        # Resolved once when the agent's prompt is first built; missing/disabled names warn and
+        # Skill names fully loaded in every new session; missing/disabled names warn and
         # skip; HERMES_IGNORE_RULES suppresses the list like the other auto-injected context.
         "auto_load": [],
         # Substitute ${HERMES_SKILL_DIR} / ${HERMES_SESSION_ID} in SKILL.md content.
