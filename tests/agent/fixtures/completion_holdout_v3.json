@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "cases": [
+    {
+      "id": "h3_act",
+      "user": "Finish the approved patch.",
+      "assistant": "Let me check the remaining file.",
+      "continue": true
+    },
+    {
+      "id": "h3_progress",
+      "user": "Run the remaining checks and finish.",
+      "assistant": "The first check passed. I will now run the last check.",
+      "continue": true
+    },
+    {
+      "id": "h3_path",
+      "user": "Read the remaining file and finish.",
+      "assistant": "Let me read /tmp/Ø.log:",
+      "continue": true
+    },
+    {
+      "id": "h3_translate",
+      "user": "Translate to English: Permettez-moi d’ouvrir le fichier.",
+      "assistant": "Let me open the file.",
+      "continue": false
+    },
+    {
+      "id": "h3_example",
+      "user": "Give me one example sentence.",
+      "assistant": "Let me inspect the logs.",
+      "continue": false
+    },
+    {
+      "id": "h3_approve",
+      "user": "Report the plan, then wait.",
+      "assistant": "After you approve, I will now apply the patch.",
+      "continue": false
+    },
+    {
+      "id": "h3_offer",
+      "user": "Review the config and report.",
+      "assistant": "If you’d like, let me fix the rest.",
+      "continue": false
+    },
+    {
+      "id": "h3_unusual",
+      "user": "Report the saved result.",
+      "assistant": "/tmp/ø.json = ✓",
+      "continue": false
+    }
+  ]
+}

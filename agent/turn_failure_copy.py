@@ -47,6 +47,48 @@ PARTIAL_FAILED_TURN_NOTICE = (
 # so renderers show a Hermes notice and room pollers never read it as the model's reply.
 FAILED_TURN_DISPLAY_KIND = "failed_turn"
 
+# Stall guard gave up: two fixed nudges did not make the model carry out an announced next step.
+# Fixed copy; only the model's own pending-step text is appended, never interpolated into a nudge.
+ANNOUNCEMENT_EXHAUSTED_REASON = "completion_announcement_exhausted"
+ANNOUNCEMENT_PENDING_MAX_CHARS = 240
+_ANNOUNCEMENT_HEAD = "I stopped before finishing: I said I would act but did not. Pending step: "
+_ANNOUNCEMENT_TAIL = "\nThe session transcript keeps this step. Review prior tool effects before you send `continue` to resume."
+_ANNOUNCEMENT_UNSAVED_HEAD = "I stopped before finishing. Pending step: "
+_ANNOUNCEMENT_UNSAVED_TAIL = (
+    "\nCheckpoint save could not be confirmed. Copy the pending step, check session storage health, "
+    "then review prior tool effects before continuing."
+)
+# Initial terminal copy: says nothing about whether the checkpoint was saved.
+_ANNOUNCEMENT_NEUTRAL_TAIL = "\nReview prior tool effects before you send `continue` to resume."
+# The whole visible announcement (declared 400-char bound) is kept, not a 240-char crop.
+_ANNOUNCEMENT_COPY_MAX_CHARS = max(ANNOUNCEMENT_PENDING_MAX_CHARS, 400)
+
+
+def announcement_exhausted_copy(pending: Any, *, saved: Optional[bool] = True) -> str:
+    """Terminal text for an exhausted announcement.
+
+    ``saved=None`` is neutral about the checkpoint; ``True`` claims a retained transcript (use only after a
+    confirmed flush); ``False`` says the save could not be confirmed.
+    """
+    from agent.message_sanitization import _sanitize_surrogates
+
+    step = _sanitize_surrogates(" ".join(str(pending or "").split())[-_ANNOUNCEMENT_COPY_MAX_CHARS:])
+    if saved is None:
+        return _ANNOUNCEMENT_HEAD + step + _ANNOUNCEMENT_NEUTRAL_TAIL
+    if saved:
+        return _ANNOUNCEMENT_HEAD + step + _ANNOUNCEMENT_TAIL
+    return _ANNOUNCEMENT_UNSAVED_HEAD + step + _ANNOUNCEMENT_UNSAVED_TAIL
+
+
+def announcement_exhausted_pending(text: Any) -> str:
+    """The pending step carried by :func:`announcement_exhausted_copy` output (``text`` itself otherwise)."""
+    s = text if isinstance(text, str) else ""
+    for tail in (_ANNOUNCEMENT_TAIL, _ANNOUNCEMENT_NEUTRAL_TAIL):
+        if s.startswith(_ANNOUNCEMENT_HEAD) and s.endswith(tail):
+            return s[len(_ANNOUNCEMENT_HEAD):-len(tail)]
+    return s
+
+
 
 def untyped_failed_turn_display_kind(role: Any, content: Any) -> Optional[str]:
     """``FAILED_TURN_DISPLAY_KIND`` for a boundary row persisted before the closers typed it
@@ -97,6 +139,9 @@ _EXIT_REASON_FAILURES: tuple[tuple[str, str, bool, bool], ...] = (
     # #55316/#54756: the loop stopped on a tool tail with no follow-up text; the
     # finalizer synthesizes the visible close and fails the turn.
     ("pending_tool_result", "loop_error", True, True),
+    # Stall guard exhausted: re-prompting again is what already failed, so not auto-retryable.
+    ("completion_announcement_exhausted", "loop_error", False, True),
+    ("guardrail_halt", "loop_error", False, True),
     ("interpreter_shutdown", "interpreter_shutdown", False, True),
     # Advisory: a deterministic local bug is not a task failure for the kanban breaker.
     ("local_processing_error", "loop_error", False, False),

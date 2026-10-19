@@ -38,11 +38,11 @@ _STALL_GUARD_REPEATABLE_SUFFIXES = ("_get_result", "_poll")  # generated / MCP p
 STALL_GUARD_IDENTICAL_CALL_THRESHOLD = 3
 # Repeating multi-call cycles (A,B,A,B,... with identical args AND results) defeat the
 # consecutive streak above — every alternation resets it, so a model replaying the same
-# 2–4 call batch each iteration ran to the budget unflagged (port of can1357/oh-my-pi#10521,
+# 2–8 call batch each iteration ran to the budget unflagged (port of can1357/oh-my-pi#10521,
 # which widened their loop guard from single-call turns to whole tool-call batches).
 # Longest cycle period detected; laps reuse the streak thresholds (notice at
 # STALL_GUARD_IDENTICAL_CALL_THRESHOLD laps, halt at no_progress_block_after laps).
-_STALL_GUARD_MAX_CYCLE_PERIOD = 4
+_STALL_GUARD_MAX_CYCLE_PERIOD = 8
 # History window: enough for block_after laps of the longest cycle plus slack.
 _STALL_GUARD_CYCLE_HISTORY = 64
 # From the 2nd byte-identical repeat the duplicate payload becomes a reference stub; smaller results

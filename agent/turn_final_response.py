@@ -14,7 +14,9 @@ from typing import Any, Dict, Optional
 from agent.message_metadata import append_message
 from agent.reasoning_promotion import answer_in_reasoning_capability
 from agent.repetition_guard import STOP_PATH_MIN_CHARS, is_runaway_repetition
-from agent.turn_failure_copy import stamp_failure
+from agent.turn_failure_copy import (
+    ANNOUNCEMENT_EXHAUSTED_REASON, announcement_exhausted_copy, stamp_failure,
+)
 from agent.turn_empty_response import recover_empty_response
 from agent.turn_stop_gates import apply_stop_gates
 from agent.turn_truncation import partial_result, repetition_copy
@@ -32,6 +34,106 @@ _EPHEMERAL_SCAFFOLDING_FLAGS = (
     "_dropped_toolcall_nudge",
 )
 
+
+def _queued_user_control(agent: Any) -> Optional[str]:
+    """Live user control that owns the next step: "redirect", "interrupt" or "steer" (None when idle)."""
+    if agent._has_pending_redirect() is True:
+        return "redirect"
+    if getattr(agent, "_interrupt_requested", False) is True:
+        return "interrupt"
+    from agent.interrupt_control import _ic_lock, _ic_slot
+    with _ic_lock(agent, "_pending_steer_lock"):
+        pending = _ic_slot(agent, "_pending_steer_lock", "_pending_steer")
+    return "steer" if isinstance(pending, str) and pending.strip() else None
+
+
+
+def _continuation_choice(agent, final_response, promoted, messages, user_message, continuations):
+    """Choose a bounded continuation; preserve valid quoted, paused and completed answers."""
+    from agent.agent_runtime_helpers import (
+        intent_ack_continuation_mode, looks_like_degenerate_final, promoted_reasoning_announces_action,
+        tool_results_this_turn,
+    )
+    from agent.completion_announcements import (
+        latest_execution_request_text, unfulfilled_action_announcement,
+        request_forbids_action, has_user_condition_or_offer,
+    )
+    _ack_mode = intent_ack_continuation_mode(agent)
+    # Said-continue-but-stopped guard: no tool calls but the short reply TAILS with an
+    # announced next action. Reuses the SAME bounded continuation counter (max 2 per turn).
+    # Promoted reasoning gets the broader first-person-plan tail detector: with tools offered
+    # and zero tool calls, chain-of-thought ending on "Let me batch the terminal calls..." is a
+    # stalled model, and returning it as the answer aborts the tool loop while reporting
+    # "complete" (#111761). Same cap, so a model that never acts still ends after 2 nudges.
+    _stall_text = agent._strip_think_blocks(final_response or "")
+    _stall_request = latest_execution_request_text(messages)
+    # Eligibility is judged independently of the counter (and of the ack setting): a stalled
+    # candidate past the cap ends the turn as an explicit failure instead of passing as an answer.
+    _stall_candidate = bool(
+        bool(getattr(agent, "_stall_guards", True))
+        and agent.valid_tool_names
+        and (
+            unfulfilled_action_announcement(_stall_text, _stall_request)
+            or (
+                bool(promoted)
+                and not request_forbids_action(_stall_request)
+                and not has_user_condition_or_offer(_stall_text)
+                and promoted_reasoning_announces_action(_stall_text)
+            )
+        )
+    )
+    _stall_continue_intent = _stall_candidate and continuations < 2
+    _stall_exhausted = _stall_candidate and not _stall_continue_intent
+    # Degenerate-final guard (#103483): the turn did real tool work and then stopped on a
+    # fragment. Same scope knob and the SAME bounded counter as the ack continuation; the nudge
+    # row itself closes the tool-work window, so a second fragment ends the turn as the answer.
+    _tool_rows = tool_results_this_turn(messages)
+    _degenerate_final = (
+        bool(getattr(agent, "_stall_guards", True))
+        and _ack_mode != "off"
+        and continuations < 2
+        and _tool_rows > 0
+        and looks_like_degenerate_final(_stall_text, user_message=user_message)
+    )
+    # Precedence: an announced next action outranks the fragment shape; the codex ack is last.
+    if _stall_continue_intent:
+        _continuation_kind = "stall"
+    elif _degenerate_final:
+        _continuation_kind = "degenerate"
+    elif (
+        _ack_mode != "off"
+        and agent.valid_tool_names
+        and continuations < 2
+        and agent._looks_like_codex_intermediate_ack(
+            user_message=user_message, assistant_content=final_response, messages=messages,
+            require_workspace=(_ack_mode == "codex_only"),
+        )
+    ):
+        _continuation_kind = "ack"
+    else:
+        _continuation_kind = None
+    return _continuation_kind, _stall_exhausted, _stall_text, _tool_rows
+
+
+def _apply_pending_control(agent, messages, assistant_message, promoted, final_response):
+    """Give live user control precedence over any continuation or exhaustion effect."""
+    control = _queued_user_control(agent)
+    steer = agent._drain_pending_steer() if control == "steer" else None
+    if control == "steer" and not steer:
+        return False
+    if control == "interrupt":
+        return True
+    if control not in ("redirect", "steer"):
+        return False
+    interim = agent._build_assistant_message(assistant_message, "incomplete")
+    if promoted:
+        interim["api_content"] = final_response
+    append_message(messages, interim)
+    agent._emit_interim_assistant_message(interim)
+    if steer:
+        from agent.conversation_loop import _apply_active_turn_redirect
+        _apply_active_turn_redirect(agent, messages, steer)
+    return True
 
 @dataclass
 class FinalResponseVerdict:
@@ -164,56 +266,36 @@ def finish_text_response(
     # heal threshold, deliver the queued notice through the status/warning callback — the normal out-of-band
     # delivery channel (gateway status message / CLI print). NEVER appended to messages/api_messages:
     # conversation context and the cached prompt prefix stay byte-identical.
-    from agent.agent_runtime_helpers import (
-        intent_ack_continuation_mode, looks_like_degenerate_final, promoted_reasoning_announces_action,
-        tool_results_this_turn, trailing_continue_intent,
+    _continuation_kind, _stall_exhausted, _stall_text, _tool_rows = _continuation_choice(
+        agent, final_response, _promoted, messages, user_message, codex_ack_continuations,
     )
-
-    _ack_mode = intent_ack_continuation_mode(agent)
-    # Said-continue-but-stopped guard: no tool calls but the short reply TAILS with an
-    # announced next action. Reuses the SAME bounded continuation counter (max 2 per turn).
-    # Promoted reasoning gets the broader first-person-plan tail detector: with tools offered
-    # and zero tool calls, chain-of-thought ending on "Let me batch the terminal calls..." is a
-    # stalled model, and returning it as the answer aborts the tool loop while reporting
-    # "complete" (#111761). Same cap, so a model that never acts still ends after 2 nudges.
-    _stall_text = agent._strip_think_blocks(final_response or "")
-    _stall_continue_intent = (
-        bool(getattr(agent, "_stall_guards", True))
-        and agent.valid_tool_names
-        and codex_ack_continuations < 2
-        and (
-            trailing_continue_intent(_stall_text)
-            or (bool(_promoted) and promoted_reasoning_announces_action(_stall_text))
-        )
-    )
-    # Degenerate-final guard (#103483): the turn did real tool work and then stopped on a
-    # fragment. Same scope knob and the SAME bounded counter as the ack continuation; the nudge
-    # row itself closes the tool-work window, so a second fragment ends the turn as the answer.
-    _tool_rows = tool_results_this_turn(messages)
-    _degenerate_final = (
-        bool(getattr(agent, "_stall_guards", True))
-        and _ack_mode != "off"
-        and codex_ack_continuations < 2
-        and _tool_rows > 0
-        and looks_like_degenerate_final(_stall_text, user_message=user_message)
-    )
-    # Precedence: an announced next action outranks the fragment shape; the codex ack is last.
-    if _stall_continue_intent:
-        _continuation_kind = "stall"
-    elif _degenerate_final:
-        _continuation_kind = "degenerate"
-    elif (
-        _ack_mode != "off"
-        and agent.valid_tool_names
-        and codex_ack_continuations < 2
-        and agent._looks_like_codex_intermediate_ack(
-            user_message=user_message, assistant_content=final_response, messages=messages,
-            require_workspace=(_ack_mode == "codex_only"),
-        )
+    if (_continuation_kind or _stall_exhausted) and _apply_pending_control(
+        agent, messages, assistant_message, _promoted, final_response,
     ):
-        _continuation_kind = "ack"
-    else:
-        _continuation_kind = None
+        agent._session_messages = messages
+        final_response = None
+        return _verdict("continue")
+
+    if _stall_exhausted:
+        logger.warning(
+            "Stall guard exhausted: %d-char announced action still not taken after %d nudge(s) — "
+            "ending the turn as incomplete", len(_stall_text), codex_ack_continuations,
+        )
+        # Neutral about save status: finalize_turn words the checkpoint only after the flush outcome is known.
+        # Promoted reasoning keeps the older 240-char crop so no more private reasoning is exposed.
+        _exhausted_text = announcement_exhausted_copy(
+            _stall_text[-240:] if _promoted else _stall_text, saved=None,
+        )
+        # Ordinary transcript row; finalize_turn persists it (and reports a failed save) and owns the result.
+        _exhausted_msg = agent._build_assistant_message(assistant_message, finish_reason)
+        _exhausted_msg["content"] = _exhausted_text
+        _exhausted_msg.pop("api_content", None)
+        append_message(messages, _exhausted_msg)
+        agent._session_messages = messages
+        final_response = _exhausted_text
+        _turn_exit_reason = ANNOUNCEMENT_EXHAUSTED_REASON
+        return _verdict("break")
+
     if _continuation_kind:
         if _continuation_kind == "stall":
             logger.info(
@@ -247,8 +329,6 @@ def finish_text_response(
         # summarization if the continuation exhausts budget.
         final_response = None
         return _verdict("continue")
-
-    codex_ack_continuations = 0
 
     if truncated_response_parts:
         final_response = _join_truncated_parts([*truncated_response_parts, (final_response, False)])

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "seed": "guard-contract-20261017-v1",
+  "cases": [
+    {
+      "id": "h_action",
+      "user": "Continue the approved task to completion.",
+      "assistant": "The path is verified. Let me open the source file:",
+      "continue": true
+    },
+    {
+      "id": "h_pull",
+      "user": "Pull the current docs and finish.",
+      "assistant": "Let me pull the current documentation.",
+      "continue": true
+    },
+    {
+      "id": "h_run",
+      "user": "Run the remaining tests and finish.",
+      "assistant": "I’ll now run the remaining tests.",
+      "continue": true
+    },
+    {
+      "id": "h_quote",
+      "user": "[discuss] Explain what this message means.",
+      "assistant": "Let me check the remaining logs.",
+      "continue": false
+    },
+    {
+      "id": "h_pause",
+      "user": "Stop here and wait.",
+      "assistant": "I will now wait for your next instruction.",
+      "continue": false
+    },
+    {
+      "id": "h_unicode",
+      "user": "What is the saved artifact?",
+      "assistant": "/tmp/修复完成.json",
+      "continue": false
+    },
+    {
+      "id": "h_quote_end",
+      "user": "Show the exact quotation.",
+      "assistant": "“Let me inspect the remaining file.”",
+      "continue": false
+    },
+    {
+      "id": "h_done",
+      "user": "Finish the current task.",
+      "assistant": "All requested work is complete. No further action is pending.",
+      "continue": false
+    }
+  ]
+}

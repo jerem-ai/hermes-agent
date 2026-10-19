@@ -1,0 +1,53 @@
+{
+  "version": 4,
+  "cases": [
+    {
+      "id": "h4_act",
+      "user": "Finish the approved repair.",
+      "assistant": "Let me inspect the remaining module:",
+      "continue": true
+    },
+    {
+      "id": "h4_read",
+      "user": "Read the last file and complete the task.",
+      "assistant": "Let me read /tmp/é.json:",
+      "continue": true
+    },
+    {
+      "id": "h4_pull",
+      "user": "Pull the docs and finish the repair.",
+      "assistant": "Let me pull the remaining documentation.",
+      "continue": true
+    },
+    {
+      "id": "h4_clear",
+      "user": "Report the completed checks.",
+      "assistant": "Let me be clear: every check passed.",
+      "continue": false
+    },
+    {
+      "id": "h4_thanks",
+      "user": "Report the completed work.",
+      "assistant": "Done. Let me say thanks.",
+      "continue": false
+    },
+    {
+      "id": "h4_wait",
+      "user": "Stop here and wait.",
+      "assistant": "I will now wait for your approval.",
+      "continue": false
+    },
+    {
+      "id": "h4_literal",
+      "user": "Translate to English: Déjame mirar el archivo.",
+      "assistant": "Let me look at the file.",
+      "continue": false
+    },
+    {
+      "id": "h4_offer",
+      "user": "Review and report the config status.",
+      "assistant": "If you want, let me repair that next.",
+      "continue": false
+    }
+  ]
+}

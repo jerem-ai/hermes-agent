@@ -447,11 +447,14 @@ class SessionPersistenceMixin:
             # the reason to record.
             self._drop_trailing_empty_response_scaffolding(messages)
             self._session_messages = messages
-            self._flush_messages_to_session_db(messages, conversation_history)
+            saved = self._flush_messages_to_session_db(messages, conversation_history)
             # Drain async token-accounting deltas at every persist point; cheap no-op when nothing queued.
             if self._session_db is not None:
                 self._session_db.flush_token_counts()
             note_turn_persisted(self)
+            # Backward compatible: existing callers ignore the flush verdict; exits that must not claim a
+            # saved transcript test ``is True``.
+            return saved
 
     def _drop_trailing_empty_response_scaffolding(self, messages: list[dict]) -> None:
         """Pop empty-response retry scaffolding from the tail. The

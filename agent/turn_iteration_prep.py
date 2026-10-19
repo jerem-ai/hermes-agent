@@ -178,7 +178,22 @@ def prepare_iteration(
     # break the prompt cache — same contract as apply_pending_steer_to_tool_results).
     _pre_api_steer = agent._drain_pending_steer()
     if _pre_api_steer:
-        _inject_steer_after_newest_tool_result(agent, messages, _pre_api_steer)
+        from agent.conversation_loop import (
+            _CODEX_ACK_CONTINUATION_NUDGE,
+            _DEGENERATE_FINAL_NUDGE,
+            _apply_active_turn_redirect,
+        )
+
+        _tail = messages[-1] if messages else None
+        if (
+            isinstance(_tail, dict)
+            and _tail.get("role") == "user"
+            and _tail.get("content") in (_CODEX_ACK_CONTINUATION_NUDGE, _DEGENERATE_FINAL_NUDGE)
+        ):
+            # Guard-nudge tail: the correction must be the latest user row, ahead of any historical tool scan.
+            _apply_active_turn_redirect(agent, messages, _pre_api_steer)
+        else:
+            _inject_steer_after_newest_tool_result(agent, messages, _pre_api_steer)
 
     # One-shot run-budget wrap-up notice at 80% of agent.run_budget_seconds, appended to the
     # newest tool result; off with no budget.

@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "cases": [
+    {
+      "id": "h2_ready",
+      "user": "Carry out the approved repair to completion.",
+      "assistant": "The checkout is ready. Let me now read the next source file:",
+      "continue": true
+    },
+    {
+      "id": "h2_now",
+      "user": "Finish the approved repair.",
+      "assistant": "Now I will inspect the logs.",
+      "continue": true
+    },
+    {
+      "id": "h2_next",
+      "user": "Run all remaining checks.",
+      "assistant": "Next, I will run the remaining checks.",
+      "continue": true
+    },
+    {
+      "id": "h2_pull",
+      "user": "Pull the source bundle and finish.",
+      "assistant": "Let me pull the source bundle.",
+      "continue": true
+    },
+    {
+      "id": "h2_quote",
+      "user": "Quote the sentence.",
+      "assistant": "‘I will now read the file’",
+      "continue": false
+    },
+    {
+      "id": "h2_stop",
+      "user": "Stop here and wait.",
+      "assistant": "I will now wait for your go-ahead.",
+      "continue": false
+    },
+    {
+      "id": "h2_discuss",
+      "user": "[discuss] Consider the repair approach.",
+      "assistant": "Let me read the remaining source.",
+      "continue": false
+    },
+    {
+      "id": "h2_conditional",
+      "user": "Prepare the release, then ask before deployment.",
+      "assistant": "I will now deploy after you confirm.",
+      "continue": false
+    }
+  ]
+}

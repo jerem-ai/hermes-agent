@@ -522,6 +522,58 @@ def apply_llm_output_transform(
     return final_response, transformed, pre_transform
 
 
+
+def _announcement_checkpoint(messages, final_response, reason):
+    """Capture only the guard-owned terminal row before output transforms run."""
+    from agent.turn_failure_copy import ANNOUNCEMENT_EXHAUSTED_REASON, announcement_exhausted_pending
+    exhausted = str(reason) == ANNOUNCEMENT_EXHAUSTED_REASON
+    pending = announcement_exhausted_pending(final_response) if exhausted else ""
+    row = None
+    if exhausted and isinstance(final_response, str):
+        row = next((m for m in reversed(messages) if isinstance(m, dict)
+                    and m.get("role") == "assistant" and m.get("content") == final_response), None)
+    return exhausted, pending, row
+
+
+def _persist_final_transcript(agent, messages, final_response, interrupted, failed, turn_id,
+                              owned_row, effective_task_id, conversation_history, logger, recovered_from_stream):
+    """Shape and persist one transcript tail through the existing fenced writer."""
+    if owned_row is not None and not interrupted and isinstance(final_response, str) and final_response:
+        # _close_transcript_tail leaves a nonblank tail alone: update the owned row before its first persist.
+        owned_row["content"] = final_response
+    _close_transcript_tail(agent, messages, final_response, interrupted, recovered_from_stream)
+    if not interrupted and not failed:
+        _micro_compact_after_turn(agent, messages, final_response, logger, effective_task_id)
+    saved = agent._persist_session(messages, conversation_history) is True
+    return final_response, saved
+
+
+def _stamp_final_failure(agent, result, failed, reason, final_response, exit_failure,
+                         persist_failed_exhaustion, persist_saved):
+    """Attach truthful failure and checkpoint status without changing the response."""
+    from agent.turn_failure_copy import ANNOUNCEMENT_EXHAUSTED_REASON
+    if failed and str(reason) == "session_persistence_failed":
+        from hermes_constants import profile_cli_selector
+
+        # Never rebind final_response here: the memory sync and the background-review gate
+        # below must still see an empty response on a persistence-failed turn.
+        result["error"] = final_response or (
+            "session storage could not be written. Check the state database "
+            f"health (`hermes {profile_cli_selector()}doctor`), then send your message again"
+        )
+        _cause = getattr(agent, "_last_persistence_error_cause", None)
+        result["failure_reason"] = "session_persistence_failed:" + (_cause or "unknown")
+    elif exit_failure is not None:
+        if failed:
+            result["error"] = final_response or str(reason)
+        stamp_failure(result, exit_failure.reason, exit_failure.retryable)
+        if persist_failed_exhaustion:
+            result["failure_reason"] = "session_persistence_failed:" + (
+                getattr(agent, "_last_persistence_error_cause", None) or "unknown"
+            )
+    if str(reason) == ANNOUNCEMENT_EXHAUSTED_REASON:
+        result["checkpoint_saved"] = persist_saved is True
+
 def finalize_turn(
     agent, *, final_response, api_call_count, interrupted, failed, messages, conversation_history,
     effective_task_id, turn_id, user_message, original_user_message, _should_review_memory,
@@ -617,8 +669,17 @@ def finalize_turn(
     # stream-recovered ``final_response`` is rebound the moment it is computed — BEFORE
     # the fallible tail-shaping / override / micro-compaction / persist calls — so a
     # raise in any of them can't drop text the user already saw (#95514, #8049).
+    from agent.turn_failure_copy import (
+        ANNOUNCEMENT_EXHAUSTED_REASON as _EXHAUSTED_REASON,
+        announcement_exhausted_copy,
+    )
+    _persist_saved = False
+    _exhausted_turn, _exhausted_pending, _owned_row = _announcement_checkpoint(
+        messages, final_response, _turn_exit_reason,
+    )
+
     def _persist_step():
-        nonlocal final_response
+        nonlocal final_response, _persist_saved
         _drop_transcript_scaffolding(agent, messages)
         final_response, _recovered_from_stream = _recover_final_from_stream(
             agent, final_response, interrupted, failed
@@ -629,12 +690,23 @@ def finalize_turn(
         # user will see, never the raw model text (#44239).
         if final_response and not interrupted:
             final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
-        _close_transcript_tail(agent, messages, final_response, interrupted, _recovered_from_stream)
-        if not interrupted and not failed:
-            _micro_compact_after_turn(agent, messages, final_response, logger, effective_task_id)
-        agent._persist_session(messages, conversation_history)
+            final_response = _sanitize_surrogates(final_response)
+        final_response, _persist_saved = _persist_final_transcript(
+            agent, messages, final_response, interrupted, failed, turn_id,
+            _owned_row, effective_task_id, conversation_history, logger, _recovered_from_stream,
+        )
 
     _guarded_cleanup("persist_session", _persist_step, _cleanup_errors, logger)
+
+    # Exhausted announcement: the pending step is only "retained" when the ordinary transcript save
+    # reported success. False/None/raised is an unsaved turn: say so and claim no checkpoint.
+    _persist_failed_exhaustion = _exhausted_turn and not _persist_saved
+    if _persist_failed_exhaustion:
+        failed = True
+        final_response = announcement_exhausted_copy(_exhausted_pending, saved=False)
+        if _owned_row is not None:
+            # In-memory only (before context-engine callbacks/result); earlier rows are untouched, no save retry.
+            _owned_row["content"] = final_response
 
     # Keep the gateway's separate in-memory history snapshot current even on
     # cleanup error, so a later prompt isn't sent with a pre-turn snapshot.
@@ -646,7 +718,7 @@ def finalize_turn(
     # Response transforms apply only to real, uninterrupted responses.
     if final_response and not interrupted:
         final_response = _append_file_mutation_footer(agent, final_response, logger)
-    if not interrupted:
+    if not interrupted and str(_turn_exit_reason) != _EXHAUSTED_REASON:
         final_response = _explain_abnormal_exit(
             agent, final_response, _turn_exit_reason, preserved_verification_fallback, logger,
         )
@@ -724,21 +796,8 @@ def finalize_turn(
     # Persistence failures already set failed=True; also stamp `error` so the gateway
     # surfaces status="error" (desktop can toast) instead of a quiet complete frame, plus
     # the machine-readable cause 'session_persistence_failed:<locked|compression|...>'.
-    if failed and str(_turn_exit_reason) == "session_persistence_failed":
-        from hermes_constants import profile_cli_selector
-
-        # Never rebind final_response here: the memory sync and the background-review gate
-        # below must still see an empty response on a persistence-failed turn.
-        result["error"] = final_response or (
-            "session storage could not be written — check the state database "
-            f"health (`hermes {profile_cli_selector()}doctor`), then send your message again"
-        )
-        _cause = getattr(agent, "_last_persistence_error_cause", None)
-        result["failure_reason"] = "session_persistence_failed:" + (_cause or "unknown")
-    elif _exit_failure is not None:
-        if failed:
-            result["error"] = final_response or str(_turn_exit_reason)
-        stamp_failure(result, _exit_failure.reason, _exit_failure.retryable)
+    _stamp_final_failure(agent, result, failed, _turn_exit_reason, final_response,
+                         _exit_failure, _persist_failed_exhaustion, _persist_saved)
     # Cleanup failures are surfaced, but the response is returned either way (#8049).
     if _cleanup_errors:
         result["cleanup_errors"] = _cleanup_errors

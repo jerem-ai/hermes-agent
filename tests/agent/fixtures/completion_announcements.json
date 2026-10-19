@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "seed": "guard-contract-20261017-v1",
+  "cases": [
+    {
+      "id": "incident",
+      "user": "Continue the approved repair; pull the docs and source, finish the work.",
+      "assistant": "SSH is working. Let me pull docs and source from there properly:",
+      "continue": true
+    },
+    {
+      "id": "plain_action",
+      "user": "Inspect the source and finish the repair.",
+      "assistant": "Let me inspect the remaining file.",
+      "continue": true
+    },
+    {
+      "id": "known_action",
+      "user": "Inspect the source and finish the repair.",
+      "assistant": "Let me now inspect the remaining file.",
+      "continue": true
+    },
+    {
+      "id": "post_progress",
+      "user": "Run the checks and finish the repair.",
+      "assistant": "The first check passed. I will now run the remaining tests.",
+      "continue": true
+    },
+    {
+      "id": "unicode_path",
+      "user": "Read the file and complete the task.",
+      "assistant": "Let me read /tmp/雪.txt:",
+      "continue": true
+    },
+    {
+      "id": "next_action",
+      "user": "Finish the approved task.",
+      "assistant": "Next, I will check the source.",
+      "continue": true
+    },
+    {
+      "id": "completed",
+      "user": "Finish the approved task.",
+      "assistant": "Done. The requested checks passed.",
+      "continue": false
+    },
+    {
+      "id": "short",
+      "user": "What is six times seven?",
+      "assistant": "42",
+      "continue": false
+    },
+    {
+      "id": "quoted",
+      "user": "Explain this phrase.",
+      "assistant": "The example is “Let me pull docs and source.”",
+      "continue": false
+    },
+    {
+      "id": "wait",
+      "user": "Pause and wait for my approval.",
+      "assistant": "Done. I’ll now wait for your go-ahead.",
+      "continue": false
+    },
+    {
+      "id": "advice",
+      "user": "[discuss] What do you think of the repair?",
+      "assistant": "Let me inspect the source.",
+      "continue": false
+    },
+    {
+      "id": "translation",
+      "user": "Translate the sentence “Let me read the file.”",
+      "assistant": "Let me read the file.",
+      "continue": false
+    },
+    {
+      "id": "unusual_final",
+      "user": "Report the result.",
+      "assistant": "Saved /tmp/雪.txt; exit 0.",
+      "continue": false
+    },
+    {
+      "id": "offer",
+      "user": "Finish the task and report back.",
+      "assistant": "Done. Let me know if you want more detail.",
+      "continue": false
+    },
+    {
+      "id": "approval_wait",
+      "user": "Prepare it, then stop for approval.",
+      "assistant": "I will now wait for your approval.",
+      "continue": false
+    },
+    {
+      "id": "discuss_known_action",
+      "user": "[discuss] What do you think of the repair?",
+      "assistant": "Let me now inspect the source.",
+      "continue": false
+    },
+    {
+      "id": "pause_stale_action",
+      "user": "Pause and wait for my approval.",
+      "assistant": "Let me now inspect the source.",
+      "continue": false
+    },
+    {
+      "id": "execution_question",
+      "user": "Can you inspect the source and finish the repair?",
+      "assistant": "Let me inspect the remaining file.",
+      "continue": true
+    },
+    {
+      "id": "wait_inside_execution",
+      "user": "Run the checks, wait for them to finish, then report.",
+      "assistant": "Let me now run the checks.",
+      "continue": true
+    },
+    {
+      "id": "question_suffix_execution",
+      "user": "Fix the failing test, ok?",
+      "assistant": "Let me now run it.",
+      "continue": true
+    },
+    {
+      "id": "quoted_narrow",
+      "user": "Show the example phrase.",
+      "assistant": "Example: \"I will now inspect the file\"",
+      "continue": false
+    },
+    {
+      "id": "backtick_broad",
+      "user": "Show the example phrase.",
+      "assistant": "`Let me read the file`",
+      "continue": false
+    },
+    {
+      "id": "single_quoted_action",
+      "user": "Show the example phrase.",
+      "assistant": "'Let me now inspect the source'",
+      "continue": false
+    },
+    {
+      "id": "curly_single_quoted_action",
+      "user": "Show the example phrase.",
+      "assistant": "‘Let me now inspect the source’",
+      "continue": false
+    },
+    {
+      "id": "pause_the_task",
+      "user": "Pause the repair.",
+      "assistant": "Let me inspect the remaining file.",
+      "continue": false
+    },
+    {
+      "id": "bare_stop",
+      "user": "Stop.",
+      "assistant": "Let me now inspect the remaining file.",
+      "continue": false
+    },
+    {
+      "id": "contraction_before_action",
+      "user": "Finish the approved repair.",
+      "assistant": "I've checked the first file. Let me now inspect the next file.",
+      "continue": true
+    },
+    {
+      "id": "possessive_before_action",
+      "user": "Finish the approved repair.",
+      "assistant": "Jeremy’s first file is clean. Let me now inspect the next file.",
+      "continue": true
+    },
+    {
+      "id": "stop_service_execution",
+      "user": "Stop the gateway and restart it with the new config.",
+      "assistant": "The service is running. Let me now restart it:",
+      "continue": true
+    },
+    {
+      "id": "explain_then_fix",
+      "user": "Explain why the test fails, then fix it.",
+      "assistant": "The assertion is stale. Let me now fix it:",
+      "continue": true
+    },
+    {
+      "id": "waiting_in_action_object",
+      "user": "Inspect the stalled job and finish the repair.",
+      "assistant": "Let me check why the job is waiting:",
+      "continue": true
+    },
+    {
+      "id": "pause_container_action",
+      "user": "Pause the container and check the logs.",
+      "assistant": "Let me pause the container and check logs.",
+      "continue": true
+    },
+    {
+      "id": "approval_conditional_final",
+      "user": "Prepare the release notes, then ask me before deploying.",
+      "assistant": "Next, I'll deploy once you approve.",
+      "continue": false
+    },
+    {
+      "id": "collective_execution_question",
+      "user": "Can we fix the build?",
+      "assistant": "Let me now inspect the failing test.",
+      "continue": true
+    },
+    {
+      "id": "leading_offer",
+      "user": "Review the config and report.",
+      "assistant": "Review complete: two issues found. If you want, let me fix them.",
+      "continue": false
+    },
+    {
+      "id": "leading_approval",
+      "user": "Report the deployment plan and wait for approval.",
+      "assistant": "Once you approve, let me deploy.",
+      "continue": false
+    },
+    {
+      "id": "translated_literal",
+      "user": "Translate to English: Déjame leer el archivo.",
+      "assistant": "Let me read the file.",
+      "continue": false
+    },
+    {
+      "id": "example_literal",
+      "user": "Give an example of a next-action sentence.",
+      "assistant": "Let me inspect the source.",
+      "continue": false
+    },
+    {
+      "id": "example_then_fix",
+      "user": "Show an example failing test, then fix it.",
+      "assistant": "Let me now fix the test.",
+      "continue": true
+    },
+    {
+      "id": "literal_example_and_fix",
+      "user": "Show an example sentence and fix the failing test.",
+      "assistant": "Let me now fix the failing test.",
+      "continue": true
+    }
+  ]
+}
