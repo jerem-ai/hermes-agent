@@ -196,16 +196,16 @@ DEFAULT_CONFIG = {
         # wrapping Hermes (sandbox runner, managed platform) can describe proxy/credential/ mount
         # layout without editing SOUL.md. Env HERMES_ENVIRONMENT_HINT overrides it.
         "environment_hint": "",
+        "execution_targets": [],
         # Coding posture: on interactive coding surfaces (CLI, TUI, desktop, ACP) in a code
         # workspace, add a coding brief + live git/workspace snapshot to the system prompt
         # (agent/coding_context.py). "auto" = prompt-only when interactive AND cwd is a code
         # workspace (toolsets untouched, messaging platforms unaffected); "focus" = auto + collapse
         # toolset to the lean coding set (+ enabled MCP servers) + demote non-coding skill
-        # categories to names-only (explicit opt-in); "on" = force everywhere; "off" = disable.
+        # categories to names-only (opt-in); "on" = force everywhere; "off" = disable.
         "coding_context": "auto",
         # Standing operator instructions (string or list) appended to the coding brief as an extra
-        # stable system block — project-wide workflow rules, e.g. "Don't run tsc/lint until I
-        # approve." Cache-safe: takes effect next session.
+        # stable system block. Cache-safe: takes effect next session.
         "coding_instructions": "",
         # When verify-on-stop finds edits without fresh verification evidence, add guidance for
         # creative UI work (no broad tsc/lint/test before visual approval) and clean-diff

@@ -325,6 +325,8 @@ def _apply_active_turn_redirect(agent: Any, messages: list[dict[str, Any]], text
     replayable content (inlined CoT reads as a prefill jailbreak and bricks the session with
     empty-response storms); the interruption scaffold is replay text carried only in the user
     correction's ``api_content``; an on-screen-empty placeholder is ``display_kind=hidden``."""
+    from agent.execution_targets import begin as begin_execution_target
+    begin_execution_target(agent, text)
     visible = agent._strip_think_blocks(getattr(agent, "_current_streamed_assistant_text", "") or "").strip()
 
     checkpoint_parts = [_INTERRUPT_SCAFFOLD_MARKER]
@@ -1738,6 +1740,8 @@ def run_conversation(
 
     # Steer / redirect / interrupt set this mid-turn; the result reports whether the turn ran untouched.
     agent._turn_user_intervened = False
+    from agent.execution_targets import begin as begin_execution_target
+    begin_execution_target(agent, persist_user_message if persist_user_message is not None else user_message)
     # Images attached natively to this user turn stay visible to vision_analyze for the turn, so
     # it does not embed the same pixels a second time into the same request (#76411).
     with native_turn_images(user_message):

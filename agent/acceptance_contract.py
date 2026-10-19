@@ -191,12 +191,14 @@ def report(agent) -> dict | None:
 
 
 def context(agent) -> str:
+    from agent.execution_targets import context as target_context
+    execution_context = target_context(agent)
     try:
         result = report(agent)
     except (OSError, ValueError, KeyError, TypeError):
         return HEADER + "\nAcceptance state is unreadable. Completion cannot be verified."
     if result is None:
-        return ""
+        return execution_context
     lines = [HEADER, "The parent objective remains authoritative across subtasks and compression."]
     for task_id, task in result["tasks"].items():
         status = "verified" if task["complete"] else "open"
@@ -204,7 +206,7 @@ def context(agent) -> str:
         lines.extend(f"  - {'PASS' if c['passed'] else 'PENDING'} {c['id']}: {c['description']}"
                      for c in task["checks"])
     lines.append("A subtask can finish while the parent stays open. Report the scope accurately.")
-    return "\n".join(lines)
+    return "\n".join(lines + ([execution_context] if execution_context else []))
 
 
 def fold_snapshots(agent, messages, fold_todos) -> None:
@@ -232,6 +234,9 @@ def fold_snapshots(agent, messages, fold_todos) -> None:
 
 
 def guarded(agent) -> bool:
+    from agent.execution_targets import guarded as target_guarded
+    if target_guarded(agent):
+        return True
     try:
         return load(agent) is not None
     except (OSError, ValueError, KeyError, TypeError):
@@ -272,6 +277,10 @@ def _refresh(agent, spec, sha, selected):
 
 def enforce_final(agent, text: str, message: dict) -> tuple[str, bool]:
     """Refresh reviewed read-only acceptance before delivering a completion claim."""
+    from agent.execution_targets import enforce as enforce_target
+    text, target_blocked = enforce_target(agent, text, message)
+    if target_blocked:
+        return text, True
     broad = _positive_matches(CLAIM, text)
     if not broad and re.match(r"^\s*(?:yes|yep|correct|absolutely)\b", text or "", re.IGNORECASE):
         from agent.completion_announcements import latest_execution_request_text

@@ -1040,7 +1040,9 @@ def _local_host_hints() -> list[str]:
         else f"macOS ({platform.mac_ver()[0] or platform.release()})" if sys.platform == "darwin"
         else f"{platform.system()} ({platform.release()})"
     )
-    host_lines = [f"Host: {host}", f"User home directory: {os.path.expanduser('~')}"]
+    from hermes_platform.host.facts import hostname
+    host_lines = [f"Host: {host}", f"Terminal machine: {hostname()}",
+                  f"User home directory: {os.path.expanduser('~')}"]
     try:
         host_lines.append(f"Current working directory: {resolve_agent_cwd()}")
     except OSError:

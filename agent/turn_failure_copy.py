@@ -139,6 +139,7 @@ _EXIT_REASON_FAILURES: tuple[tuple[str, str, bool, bool], ...] = (
     # #55316/#54756: the loop stopped on a tool tail with no follow-up text; the
     # finalizer synthesizes the visible close and fails the turn.
     ("pending_tool_result", "loop_error", True, True),
+    ("execution_target_unverified", "execution_target_unverified", False, True),
     # Stall guard exhausted: re-prompting again is what already failed, so not auto-retryable.
     ("completion_announcement_exhausted", "loop_error", False, True),
     ("guardrail_halt", "loop_error", False, True),

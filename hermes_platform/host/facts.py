@@ -30,6 +30,12 @@ def os_family() -> str:
 
 
 @functools.cache
+def hostname() -> str:
+    """Name of the control machine, never an inferred SSH/container execution target."""
+    return platform.node() or "unknown"
+
+
+@functools.cache
 def process_arch() -> str:
     """Return the architecture of this Python process."""
     return normalize_arch(platform.machine())
@@ -325,5 +331,5 @@ def interactive_session() -> bool:
 
 def clear_caches() -> None:
     """Clear every cached host fact."""
-    for fact in (os_family, process_arch, native_arch, cpu_model, cpu_vendor, ram_total_bytes, gpu_class):
+    for fact in (os_family, hostname, process_arch, native_arch, cpu_model, cpu_vendor, ram_total_bytes, gpu_class):
         fact.cache_clear()

@@ -3761,8 +3761,6 @@ def _requeue_pending_steer(agent, steer_text: str) -> None:
 def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: int) -> None:
     """Persist any pending /steer text as a standalone user message.
 
-    Called at the end of a tool-call batch, before the next API call.
-
     The steer is emitted as a NEW ``role:"user"`` message appended after the
     last tool result (marker text included), so:
 
@@ -3792,6 +3790,8 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
         # user message (which persists like any other user turn).
         _requeue_pending_steer(agent, steer_text)
         return
+    from agent.execution_targets import begin as begin_execution_target
+    begin_execution_target(agent, steer_text)
     messages.append(steer_user_row(steer_text))
     _ra().logger.info(
         "Delivered /steer to agent after tool batch (%d chars) as new user message: %s", len(steer_text),

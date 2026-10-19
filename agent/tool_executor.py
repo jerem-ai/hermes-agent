@@ -712,6 +712,11 @@ def _dispatch_authorized_once(
         resolve = lambda: _pre_tool_block(agent, ref)
         block_message, ref.args = resolve() if authorization_gate is None else authorization_gate.run(resolve)
         state.args = ref.args
+    if block_message is None:
+        from agent.execution_target_tools import block as target_block
+        block_message = target_block(agent, ref.name, ref.args)
+        if block_message is not None:
+            block_error_type = "execution_target_mismatch"
     block_body = None if block_message is None else {"error": block_message}
 
     # Checked once, after plugin modify hooks (which may replace arguments) and
@@ -752,7 +757,10 @@ def _dispatch_authorized_once(
     try:
         prepare_current_terminal(ref)
         _advance_start_order(lambda: _begin_tool_execution(agent, ref, display_index))
-        return _run_with_activity_heartbeat(agent, ref.name, lambda: execute(ref.args))
+        from agent.execution_target_tools import record as record_target_result
+        target_epoch = getattr(agent, "_execution_target_epoch", None)
+        return record_target_result(agent, ref.name, ref.args,
+                                    _run_with_activity_heartbeat(agent, ref.name, lambda: execute(ref.args)), epoch=target_epoch)
     finally:
         reset_current_tool_context(tool_context_token)
 
