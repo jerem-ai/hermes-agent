@@ -597,10 +597,12 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         source = self.build_source(chat_id=session_chat_id, chat_name=chat_identifier or sender,
                                    chat_type="group" if is_group else "dm", user_id=sender, user_name=sender,
                                    chat_id_alt=chat_identifier)
+        from gateway.platforms.bluebubbles_reply import resolve_reply
+        reply_id, reply_text, reply_is_own = await resolve_reply(self, record, chat_guid)
         event = MessageEvent(
             text=text, message_type=msg_type, source=source, raw_message=payload,
             message_id=self._value(record.get("guid"), record.get("messageGuid"), record.get("id")),
-            reply_to_message_id=self._value(record.get("threadOriginatorGuid"), record.get("associatedMessageGuid")),
+            reply_to_message_id=reply_id, reply_to_text=reply_text, reply_to_is_own_message=reply_is_own,
             media_urls=media_urls, media_types=media_types)
         task = asyncio.create_task(self.handle_message(event))
         self._background_tasks.add(task)

@@ -1060,7 +1060,9 @@ def _invalid_tool_name_error_content(name: str, valid_tool_names) -> str:
             "tool, use a valid name from your tool list; otherwise reply in plain text."
         )
     available = ", ".join(sorted(valid_tool_names))
-    return f"Tool '{name}' does not exist. Available tools: {available}"
+    hint = (" Use tool_search to check for deferred capabilities, then tool_call to invoke a discovered tool."
+            if "tool_search" in valid_tool_names else "")
+    return f"Tool '{name}' is not directly exposed in this session.{hint} Available tools: {available}"
 
 
 def _content_policy_blocked_result(
