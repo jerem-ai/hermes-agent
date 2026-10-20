@@ -123,7 +123,7 @@ def collect_status(home: Path, config: dict, *, session_id: str | None = None, l
               for r in rows[-max(1, min(limit, 100)):]]
     return {"version": 1, "profile_home": str(home), "session_id": session_id,
             "configuration": _configuration(config),
-            "observed": {"outcome_evidence": "recorded" if rows else "not_recorded",
+            "observed": {"outcome_evidence": "recorded" if outcomes else "not_recorded",
                          "outcomes": dict(outcomes), "successful_write_results": writes,
                          "usage_receipts": receipts, "usage_evidence": usage_state,
                          "unreadable_records": invalid, "bounded_history": bounded, "recent": recent},

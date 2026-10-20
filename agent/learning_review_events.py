@@ -16,8 +16,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 EVENTS = frozenset({"queued", "started", "cancel_requested", "completed", "incomplete", "cancelled", "failed", "skipped", "unknown"})
 TERMINAL_EVENTS = EVENTS - {"queued", "started", "cancel_requested"}
-_MUTATIONS = {"memory": {"add", "replace", "remove"},
-              "skill_manage": {"create", "edit", "patch", "write_file", "remove_file", "delete"}}
+_MUTATIONS = {"memory": ("add", "replace", "remove"),
+              "skill_manage": ("create", "edit", "patch", "write_file", "remove_file", "delete")}
 
 
 def event_path(home: Path) -> Path:
@@ -91,10 +91,10 @@ def _review_calls(messages: list[dict]) -> dict:
             continue
         tool_calls = msg.get("tool_calls")
         for call in tool_calls if isinstance(tool_calls, list) else []:
-            if not isinstance(call, dict):
+            if not isinstance(call, dict) or not isinstance(call.get("id"), str):
                 continue
             fn = call.get("function") or {}
-            if isinstance(fn, dict) and fn.get("name") in _MUTATIONS:
+            if isinstance(fn, dict) and isinstance(fn.get("name"), str) and fn["name"] in _MUTATIONS:
                 calls[call.get("id")] = (fn["name"], _decode_dict(fn.get("arguments")))
     return calls
 
@@ -118,7 +118,8 @@ def _write_result(tool: str, args: dict, data: dict) -> tuple[str, int]:
 
 def write_counts(messages: list[dict], prior: list[dict]) -> dict[str, int]:
     """Count only attributed, fresh mutation results. Staging and rollback stay separate."""
-    old_ids = {m.get("tool_call_id") for m in prior if isinstance(m, dict) and m.get("role") == "tool"}
+    old_ids = {m["tool_call_id"] for m in prior if isinstance(m, dict) and m.get("role") == "tool"
+               and isinstance(m.get("tool_call_id"), str)}
     calls = _review_calls(messages)
     counts = {"memory": 0, "skill": 0, "staged": 0}
     seen = set(old_ids)
@@ -126,7 +127,7 @@ def write_counts(messages: list[dict], prior: list[dict]) -> dict[str, int]:
         if not isinstance(msg, dict) or msg.get("role") != "tool":
             continue
         call_id = msg.get("tool_call_id")
-        if not call_id or call_id in seen or call_id not in calls:
+        if not isinstance(call_id, str) or not call_id or call_id in seen or call_id not in calls:
             continue
         seen.add(call_id)
         tool, args = calls[call_id]

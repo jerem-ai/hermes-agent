@@ -48,6 +48,13 @@ def test_staged_and_rolled_back_writes_are_not_applied():
     assert events.write_counts(duplicate, [])["memory"] == 0
 
 
+def test_malformed_actions_do_not_break_outcome_cleanup():
+    malformed = _call("memory", {"action": ["add"]}, {"success": True})
+    malformed += _call(["memory"], {"action": "add"}, {"success": True}, "invalid-name")
+    malformed += _call("memory", {"action": "add"}, {"success": True}, ["bad-id"])
+    assert events.write_counts(malformed, malformed[-1:]) == {"memory": 0, "skill": 0, "staged": 0}
+
+
 def test_event_is_profile_scoped_and_excludes_private_text(tmp_path, monkeypatch):
     from hermes_constants import set_hermes_home_override, reset_hermes_home_override
     default = tmp_path / "default"

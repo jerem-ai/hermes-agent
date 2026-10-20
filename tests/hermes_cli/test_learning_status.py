@@ -82,6 +82,15 @@ def test_failed_cancelled_and_staged_are_visible_without_content(tmp_path):
     assert "PRIVATE" not in json.dumps(result)
 
 
+def test_started_event_is_not_an_observed_outcome(tmp_path):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "learning-reviews.jsonl").write_text(json.dumps({"event": "started", "review_id": "r"}) + "\n")
+    observed = learning_status.collect_status(tmp_path, _config())["observed"]
+    assert observed["outcome_evidence"] == "not_recorded"
+    assert observed["recent"][0]["event"] == "started"
+
+
 def test_cli_parser_and_json_use_active_profile(tmp_path, monkeypatch, capsys):
     from hermes_cli.commands import resolve_command
     from hermes_cli.subcommands.memory import build_memory_parser
