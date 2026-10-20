@@ -13,7 +13,8 @@ from agent.agent_runtime_helpers import (
 # ``let me know`` is an offer, not an action.
 _ANNOUNCED_ACTION_TAIL_RE = re.compile(
     r"(?:\blet me\s+(?:(?:now|first|just|also)\s+)?"
-    r"(?:pull|read|inspect|check|open|run|search|fetch|fix|repair|edit|apply|restart|start|stop|pause|test|debug|compare|verify|look\s+at|look\s+up)\b"
+    r"(?:pull|read|inspect|check|open|run|search|fetch|fix|repair|edit|apply|restart|start|stop|pause|test|debug|compare|verify|look\s+at|look\s+up"
+    r"|add|append|write|create|copy|install|configure|update|remove|delete|save|set\s+up)\b"
     r"|\bnext,? i(?:['\u2019]ll| will)\b)"
     r"(?:[^.!?\n\x22\u201c\u201d\u00ab\u00bb]|\.(?=[^\s.!?\x22\u201c\u201d\u00ab\u00bb])){0,100}[.:\u2026]?\s*$",
     re.IGNORECASE,
@@ -36,6 +37,12 @@ _PAUSE_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 _QUOTE_PAIRS = (("\u201c", "\u201d"), ("\u00ab", "\u00bb"))
+# Adding a clarification to the answer is a completed speech act, not a file mutation.
+_ADDED_COMMENT_RE = re.compile(
+    r"^let me\s+(?:(?:now|first|just|also)\s+)?add\s+"
+    r"(?:that\b|(?:(?:a|an|one|another|this)\s+)?(?:clarification|note|point|caveat|comment)\s*:)",
+    re.IGNORECASE,
+)
 
 
 def request_forbids_action(request: Any) -> bool:
@@ -173,7 +180,7 @@ def unfulfilled_action_announcement(text: str, user_text: Any = None) -> bool:
     if _inside_quote(t, len(t) - len(tail) + match.start()):
         return False
     span = match.group(0)
-    if _PAUSE_ACTION_RE.match(span.strip()) or _APPROVAL_GATE_RE.search(span):
+    if _PAUSE_ACTION_RE.match(span.strip()) or _APPROVAL_GATE_RE.search(span) or _ADDED_COMMENT_RE.match(span.strip()):
         return False
     if request and span.strip(" .:\u2026\n").casefold() in request.casefold():
         return False

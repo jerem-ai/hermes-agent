@@ -504,7 +504,8 @@ def _list_recent_sessions(db, limit: int, current_session_id: str | None = None,
             for s in [x for x in sessions if x.get("id", "") not in hidden][:limit]]
         return _ok(mode="browse", results=results, count=len(results), message=(
             f"Showing {len(results)} most recent sessions. Pass a query= to search, "
-            "or session_id+around_message_id to scroll."))
+            "or session_id alone to read one. message_count is a count, not a message ID. "
+            "Scroll with session_id+around_message_id only after reading actual message IDs."))
 
     out, err = _loud(_browse, "Error listing recent sessions: %s", "Failed to list recent sessions")
     return err or out
@@ -529,7 +530,7 @@ def _anchor_in_live_context(db, anchor_state, anchor_sid: str, current_session_i
 
 
 def _scroll(db, session_id: str, around_message_id: int, window: int = 5,
-            current_session_id: str | None = None) -> str:
+            current_session_id: str | None = None, link_profile: str | None = None) -> str:
     """Scroll shape: a window centered on an anchor (no FTS5, no bookends)."""
     try:
         around_message_id = int(around_message_id)
@@ -562,7 +563,12 @@ def _scroll(db, session_id: str, around_message_id: int, window: int = 5,
             view, messages, session_id = rebind_view, rebind_view["window"], owning
             session_meta = _get_session_meta(db, owning) or session_meta
     if not messages:
-        return tool_error(f"around_message_id {around_message_id} not in session_id {session_id}", success=False)
+        recovery = {"session_id": session_id}
+        if link_profile:
+            recovery["profile"] = link_profile
+        return tool_error(f"around_message_id {around_message_id} not in session_id {session_id}", success=False,
+                          hint="Read the session without around_message_id, then scroll using an actual returned message ID.",
+                          recovery_call=recovery)
     return _ok(
         mode="scroll", session_id=session_id, around_message_id=around_message_id,
         session_meta=_session_meta_block(session_meta), window=window,
@@ -598,7 +604,7 @@ def _dispatch(query, role_filter, limit, db, current_session_id, session_id,
         owned_dbs.append(profile_db)
     if isinstance(session_id, str) and session_id.strip():
         if around_message_id is not None:
-            return _scroll(db, session_id.strip(), around_message_id, window, current_session_id)
+            return _scroll(db, session_id.strip(), around_message_id, window, current_session_id, link_profile=profile)
         return _read_scoped(db, session_id.strip(), profile)
     limit = _clamp_int(limit, 3, 1, 10)
     if not query or not isinstance(query, str) or not query.strip():
