@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import closing
 import argparse
 import json
 from pathlib import Path
@@ -93,7 +94,7 @@ def _usage_receipts(home: Path, session_id: str | None) -> tuple[int | None, str
     if not path.exists():
         return 0, "no_database"
     try:
-        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2) as conn:
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
             query = "SELECT count(*) FROM session_model_usage WHERE task = ?"
             params = ["background_review"]
             if session_id:

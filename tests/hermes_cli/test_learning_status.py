@@ -35,6 +35,23 @@ def test_nonmanaged_leyline_auto_is_not_idle_queued(tmp_path, monkeypatch):
     assert result["observed"]["outcome_evidence"] == "not_recorded"
 
 
+def test_status_closes_its_read_only_database(tmp_path, monkeypatch):
+    path = tmp_path / "state.db"
+    conn = sqlite3.connect(path)
+    conn.execute("create table session_model_usage(session_id text, task text)")
+    conn.close()
+    closed = []
+    class TrackedConnection(sqlite3.Connection):
+        def close(self):
+            closed.append(True)
+            super().close()
+    connect = sqlite3.connect
+    monkeypatch.setattr(learning_status.sqlite3, "connect",
+                        lambda *a, **kw: connect(*a, **kw, factory=TrackedConnection))
+    assert learning_status.collect_status(tmp_path, _config())["observed"]["usage_receipts"] == 0
+    assert closed == [True]
+
+
 def test_managed_endpoint_and_unicode_profile_are_valid(tmp_path, monkeypatch):
     home = tmp_path / "profile 雪"
     home.mkdir()
