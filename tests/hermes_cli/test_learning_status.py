@@ -66,6 +66,7 @@ def test_failed_cancelled_and_staged_are_visible_without_content(tmp_path):
 
 
 def test_cli_parser_and_json_use_active_profile(tmp_path, monkeypatch, capsys):
+    from hermes_cli.commands import resolve_command
     from hermes_cli.subcommands.memory import build_memory_parser
     from hermes_cli import memory_setup
     parser = argparse.ArgumentParser()
@@ -77,6 +78,7 @@ def test_cli_parser_and_json_use_active_profile(tmp_path, monkeypatch, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["profile_home"] == str(tmp_path)
     assert result["session_id"] == "s"
+    assert "status" in resolve_command("memory").subcommands
 
 
 def test_native_memory_status_does_not_require_or_write_a_memory_store(tmp_path, monkeypatch):
