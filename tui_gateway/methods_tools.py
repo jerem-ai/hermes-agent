@@ -1025,18 +1025,8 @@ _SKILLS_USAGE = ("Unknown /skills subcommand here. "
 
 
 def _pending_subcommand_store(session):
-    """Memory store for the session's own profile: the live agent's store when there is one, else a
-    freshly loaded on-disk store — mirroring cli.py's /memory handler and the gateway's (Desktop/TUI
-    sessions have no long-lived agent store). ``None`` when even that fails, which the shared handler
-    reports as "memory store unavailable" instead of claiming the write was applied."""
-    if session:
-        with contextlib.suppress(Exception):
-            store = getattr(session.get("agent"), "_memory_store", None)
-            if store is not None:
-                return store
-    with contextlib.suppress(Exception):
-        return _tools_mod("tools.memory_tool").load_on_disk_store()
-    return None
+    from tui_gateway.memory_commands import pending_subcommand_store
+    return pending_subcommand_store(session)
 
 
 def _write_approval_mode_setter(subsystem: str):
@@ -1057,6 +1047,10 @@ def _run_pending_review(rid, subsystem: str, arg: str, session, *, unknown: str)
 
 def _cmd_memory(rid, params, session, name, arg):
     """/memory — review staged memory writes, approve/reject them, toggle the gate."""
+    from hermes_cli.learning_status import handle_slash
+    status = handle_slash((arg or "").split())
+    if status is not None:
+        return _exec_out(rid, status)
     return _run_pending_review(rid, "memory", arg, session, unknown=_MEMORY_USAGE)
 
 

@@ -218,6 +218,12 @@ def memory_tool(action: str | None = None, target: str = "memory", content: str 
     or batch (``operations``, atomic against the final budget). ``new_text``
     aliases ``content`` -- for 'replace' both mean the COMPLETE new entry (the
     whole matched entry is overwritten; old_text only locates it)."""
+    if action == "status":
+        if operations or content or old_text or new_text:
+            return tool_error("Use action='status' alone; it does not apply memory edits.", success=False)
+        from hermes_cli.config import load_config_readonly
+        from hermes_cli.learning_status import collect_status
+        return json.dumps({"success": True, **collect_status(get_hermes_home(), load_config_readonly())}, ensure_ascii=False)
     if store is None:
         return tool_error("Memory is not available. It may be disabled in config or this environment.", success=False)
     token = FAILURE_CLASS.set("other")
@@ -346,6 +352,9 @@ def apply_memory_pending(payload: dict[str, Any], store: MemoryStore) -> dict[st
 MEMORY_SCHEMA = {
     "name": "memory",
     "description": (
+        "Use action='status' to inspect automatic learning for the active profile: configuration, "
+        "recorded review outcomes, and successful write results. It is read-only. Enabled settings "
+        "or token usage do not prove a review completed or saved a useful lesson.\n\n"
         "Save durable facts to persistent memory that survive across sessions. Memory is "
         "injected into every future turn, so keep entries compact and high-signal.\n\n"
         "HOW: make ALL your changes in ONE call via an 'operations' array (each item: "
@@ -374,7 +383,7 @@ MEMORY_SCHEMA = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["add", "replace", "remove"],
+                "enum": ["add", "replace", "remove", "status"],
                 "description": "The action to perform (single-op shape). Omit when using 'operations'."
             },
             "target": {

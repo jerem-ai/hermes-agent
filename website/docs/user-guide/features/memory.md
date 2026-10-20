@@ -56,9 +56,51 @@ The format includes:
 
 **Frozen snapshot pattern:** The system prompt injection is captured once at session start and never changes mid-session. This is intentional — it preserves the LLM's prefix cache for performance. When the agent adds/removes memory entries during a session, the changes are persisted to disk immediately but won't appear in the system prompt until the next session starts. Tool responses always show the live state.
 
-## Memory Needs Session Boundaries
+## Inspect learning before changing settings
 
-The whole memory system is built around the moment a session **ends**: `MEMORY.md` and `USER.md` carry the essentials into the next session, and `session_search` fills the gaps once the old context is gone. Inside a single session none of that machinery has a reason to run — everything important is still in the live context, so the agent rarely consults `session_search` and mostly compacts memory entries instead of curating them.
+Use `/memory status` in Desktop, the TUI, CLI chat, or messaging. For a JSON
+readout from the terminal:
+
+```bash
+hermes memory status --learning --json
+hermes -p work memory status --learning --json --session SESSION_ID
+```
+
+The agent can use `memory(action="status")` for the same read-only profile
+status. The readout separates configuration from recorded review outcomes and
+successful mutation-tool results. It does not initialize a provider, start a
+review, or make a model request. The reported profile path is the profile
+actually inspected. Runtime resolution for an existing conversation and its
+current nudge counters are not inferred from configuration.
+
+New review events are stored without prompts or memory contents in
+`logs/learning-reviews.jsonl` under that profile. Events include queued,
+started, cancellation requested, completed, incomplete, cancelled, skipped,
+failed, or unknown. Successful write results remain visible when a review
+saved something before failing. Staged writes and rolled-back skill batches
+do not count as applied writes. A completed review can correctly save nothing.
+
+Older `session_model_usage` receipts show that review usage was accounted for;
+they do not establish an outcome or a learned lesson. Missing events mean no
+outcome was recorded, not that learning was disabled. Recent events are a
+bounded history and do not prove a worker is still alive. Lesson correctness
+and reuse in another conversation require separate evidence.
+
+For recent body-free events, without issuing an inference request:
+
+```bash
+hermes memory status --learning --json --limit 20
+```
+
+## Memory Snapshots Need Session Boundaries
+
+Foreground memory tools and automatic post-turn reviews can persist learning
+inside an ongoing session. Automatic memory review uses the configured user-turn
+interval; skill review uses the configured tool-iteration interval. A session
+does not have to end for those writes to happen. A new session loads the latest
+`MEMORY.md` and `USER.md` snapshot, while `session_search` can recover details
+from previous conversations. The current session's prompt stays frozen for
+prefix-cache reuse.
 
 This matters on messaging platforms (Telegram, Discord, etc.), where a chat is deliberately [one continuous session](../sessions.md#session-continuity) that survives restarts, gateway crashes, and machine reboots. Shutting the machine down overnight does **not** end the session — the next message picks it up exactly where it left off. If you never reset, a chat can run for weeks as a single session: convenient, but it grows expensive (compaction runs repeatedly over an ever-longer history) and the learning loop of *forget → recall from memory → search past sessions* almost never gets to fire. Fresh memory entries also stay invisible to the running session because of the frozen snapshot above.
 

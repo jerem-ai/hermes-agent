@@ -23,7 +23,11 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
     _setup_parser.add_argument(
         "provider", nargs="?", default=None,
         help="Provider to configure directly (e.g. honcho), skipping the picker")
-    memory_sub.add_parser("status", help="Show current memory provider config")
+    status = memory_sub.add_parser("status", help="Show memory provider config or learning evidence")
+    status.add_argument("--learning", action="store_true", help="Show learning configuration and recorded review outcomes")
+    status.add_argument("--json", action="store_true", help="Emit read-only learning status as JSON (implies --learning)")
+    status.add_argument("--session", dest="session_id", help="Filter learning evidence to one session ID")
+    status.add_argument("--limit", type=int, default=10, help="Recent learning events to show (1 to 100)")
     memory_sub.add_parser("off", help="Disable external provider (built-in only)")
     _reset_parser = memory_sub.add_parser(
         "reset", help="Erase all built-in memory (MEMORY.md and USER.md)")

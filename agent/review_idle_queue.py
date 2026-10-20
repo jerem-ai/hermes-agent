@@ -104,6 +104,8 @@ class ReviewIdleQueue:
                 agent, session_key, kwargs, enqueued_at, contextvars.copy_context())
         self._ensure_thread()
         self._wake.set()
+        from agent.learning_review_events import record_decision
+        record_decision(agent, "queued", "managed_local_idle")
         logger.info("Background review deferred (session=%s, queued=%d)", session_key[-12:], len(self._pending))
 
     def pending_count(self) -> int:
@@ -162,6 +164,8 @@ class ReviewIdleQueue:
 
     def _dispatch(self, item: _PendingReview) -> None:
         if not self._still_enabled(item):
+            from agent.learning_review_events import record_decision
+            record_decision(item.agent, "skipped", "disabled_before_dispatch")
             logger.info(
                 "Deferred background review dropped: reviews were disabled while it was queued (session=%s)",
                 item.session_key[-12:])

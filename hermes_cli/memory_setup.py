@@ -364,6 +364,10 @@ def _mark(enabled) -> str:
 
 def cmd_status(args) -> None:
     """Show current memory provider config."""
+    if getattr(args, "learning", False) or getattr(args, "json", False) or getattr(args, "session_id", None):
+        from hermes_cli.learning_status import cmd_status as learning_status
+        learning_status(args)
+        return
     from hermes_cli.config import load_config
 
     config = load_config()

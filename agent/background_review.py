@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import threading
+import uuid
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -29,6 +30,7 @@ class _BackgroundReviewRun:
     """Per-review cancellation and request-completion handshake."""
 
     def __init__(self) -> None:
+        self.review_id = uuid.uuid4().hex
         self.cancel_requested = threading.Event()
         self.request_done = threading.Event()
         self._lock = threading.Lock()
@@ -156,6 +158,9 @@ def cancel_background_review_for_live_turn(
     # survive teardown. Placed in this finally so a fork that consumed tokens and THEN raised is still
     # attributed (issue #87250). Best-effort: the recorder never raises into the review thread.
     if review_agent is not None:
+        if run is not None:
+            from agent.learning_review_events import record_event
+            record_event(agent, run.review_id, "cancel_requested")
         _interrupt_background_review(review_agent, message=message, tool_reason=tool_reason)
     if run is None:
         return
@@ -1126,6 +1131,7 @@ class _ReviewForkState:
     review_agent: Any = None
     review_messages: list[dict] = field(default_factory=list)
     review_usage: dict[str, Any] = field(default_factory=dict)
+    result: Any = None
 
 
 def _release_fork_clients(review_agent: Any) -> None:
@@ -1174,7 +1180,7 @@ def _run_review_fork(
     try:
         if review_run is None or review_run.begin_request(st.review_agent):
             # Routed -> digest (cache cold anyway); same model -> full snapshot (warm cache reads).
-            st.review_agent.run_conversation(
+            st.result = st.review_agent.run_conversation(
                 user_message=(
                     prompt + "\n\nYou can only call " + memory_phrase_prompt +
                     "management tools. Other tools will be denied "
@@ -1188,13 +1194,13 @@ def _run_review_fork(
         # survive teardown, and in this finally so a fork that consumed tokens then raised is
         # still attributed. The recorder never raises.
         if st.review_agent is not None:
+            st.review_messages = list(getattr(st.review_agent, "_session_messages", []))
             st.review_usage.update(_snapshot_review_usage(st.review_agent))
             _record_review_usage_to_parent(agent, st.review_usage)
         # Publish completion as soon as the provider-capable phase has returned or startup
         # cancellation has fenced it out (unregister + finish are identity-scoped and idempotent).
         _track_review_fork(agent, st.review_agent, register=False)
         finish_background_review_run(agent, review_run)
-    st.review_messages = list(getattr(st.review_agent, "_session_messages", []))
     _release_fork_clients(st.review_agent)
     st.review_agent = None
 
@@ -1219,24 +1225,27 @@ def _run_review_in_thread(
 
     See #84423.
     """
+    from agent.learning_review_events import record_event, review_outcome, write_counts
+
+    review_id = review_run.review_id if review_run is not None else uuid.uuid4().hex
     if review_run is not None and review_run.cancel_requested.is_set():
+        record_event(agent, review_id, "cancelled", reason="before_request")
         finish_background_review_run(agent, review_run)
         return
-    _set_thread_approval_callback(_bg_review_auto_deny)
-    # A client that can't carry Hermes tool calls back would spawn a fork that cannot write
-    # anything. Checked BEFORE the thread-scoped silence so the warning is not swallowed; cheap
-    # check first so the normal path never resolves the runtime twice.
-    if not _parent_can_emit_tool_calls(agent) and not _resolve_review_runtime(agent, task_cfg).get("routed"):
-        logger.warning(
-            "Background review skipped: provider %r cannot emit Hermes tool calls, "
-            "so the review fork could not write memories or skills. Set "
-            "auxiliary.background_review.{provider,model} to route the review to a normal model.",
-            getattr(agent, "provider", "?"),
-        )
-        _set_thread_approval_callback(None)
-        return
     st = _ReviewForkState()
+    outcome, reason, error_type = "unknown", None, None
     try:
+        _set_thread_approval_callback(_bg_review_auto_deny)
+        # Keep this inside the cleanup scope: a skipped fork must release its run token too.
+        if not _parent_can_emit_tool_calls(agent) and not _resolve_review_runtime(agent, task_cfg).get("routed"):
+            logger.warning(
+                "Background review skipped: provider %r cannot emit Hermes tool calls; "
+                "configure auxiliary.background_review to use a tool-capable runtime.",
+                getattr(agent, "provider", "?"),
+            )
+            outcome, reason = "skipped", "runtime_cannot_emit_tools"
+            return
+        record_event(agent, review_id, "started")
         # Silence stdout/stderr for THIS thread only: a process-global redirect would blank every
         # other thread's console for the whole review.
         # A process-global ``contextlib.redirect_stdout(devnull)`` here would also blank
@@ -1246,6 +1255,7 @@ def _run_review_in_thread(
         # to devnull and leaves all other threads on the real streams.
         with thread_scoped_silence():
             _run_review_fork(agent, messages_snapshot, prompt, task_cfg, review_run, st, review_memory, explicit)
+        outcome = review_outcome(st.result, bool(review_run and review_run.cancel_requested.is_set()))
         # A buggy/legacy tool response shape must NOT take down the whole review (the outer
         # except would discard every action the fork DID complete), so coerce to an empty list.
         try:
@@ -1274,11 +1284,14 @@ def _run_review_in_thread(
         if actions:
             _publish_review_summary(agent, actions)
     except Exception as e:
+        outcome, error_type = "failed", type(e).__name__
         logger.warning("Background memory/skill review failed: %s", e)
         if st.review_usage:
             _log_review_completion(st.review_usage, "error")
         agent._emit_auxiliary_failure(t("display.review.aux_failure_label"), e)
     finally:
+        record_event(agent, review_id, outcome, reason=reason, error_type=error_type,
+                     writes=write_counts(st.review_messages, messages_snapshot))
         # Safety net for the exception path (setup failures before the request-phase finally).
         # Both cleanups are identity-scoped and idempotent; re-enter thread-scoped silence so
         # cleanup output stays quiet without blanking other threads.

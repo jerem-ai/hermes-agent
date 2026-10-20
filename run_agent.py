@@ -765,6 +765,8 @@ class AIAgent(
             from agent.background_review import load_background_review_settings
             enabled, task_cfg = load_background_review_settings()
             if not enabled:
+                from agent.learning_review_events import record_decision
+                record_decision(self, "skipped", "automatic_review_disabled")
                 return
 
         # Structural clone at the single chokepoint: the fork sanitizes in place, and a shallow copy would
@@ -817,7 +819,9 @@ class AIAgent(
             # Carry the active profile into the review thread so MEMORY.md / skill review writes land in the
             # right profile.
             threading.Thread(target=propagate_context_to_thread(_target_with_requeue), daemon=True, name="bg-review").start()
-        except Exception:
+        except Exception as exc:
+            from agent.learning_review_events import record_event
+            record_event(self, review_run.review_id, "failed", reason="worker_start_failed", error_type=type(exc).__name__)
             finish_background_review_run(self, review_run)
             raise
 

@@ -85,6 +85,21 @@ async def test_slash_config_writes_hit_routed_profile_and_leave_default_untouche
 
 
 @pytest.mark.asyncio
+async def test_learning_status_uses_routed_profile_without_loading_memory(homes, monkeypatch):
+    import json
+    from tools import memory_tool
+    default_home, routed_home = homes
+    before = {p: p.read_bytes() for p in (default_home / "config.yaml", routed_home / "config.yaml")}
+    monkeypatch.setattr(memory_tool, "load_on_disk_store", lambda: (_ for _ in ()).throw(AssertionError("Status loaded a store")))
+    runner = _Runner()
+    runner.routed_home = routed_home
+    data = json.loads(await runner.slash("memory", "status --json"))
+    assert data["profile_home"] == str(routed_home)
+    assert data["observed"]["outcome_evidence"] == "not_recorded"
+    assert {p: p.read_bytes() for p in before} == before
+
+
+@pytest.mark.asyncio
 async def test_memory_and_skills_review_commands_use_routed_profile_from_dispatch(homes):
     """The dispatcher binds the routed runtime around the handlers (the ambient scope is the
     receiving bot's = the default home here), including destructive actions."""
