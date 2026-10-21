@@ -74,7 +74,7 @@ class TestCompressNoOpRegistersIneffective:
 
         # Mock _find_tail_cut_by_tokens to return head_end,
         # causing compress_start >= compress_end
-        comp._find_tail_cut_by_tokens = lambda msgs, he: he  # force no-op
+        comp._find_tail_cut_by_tokens = lambda msgs, he, **_: he  # force no-op
 
         result = comp.compress(messages, current_tokens=73_000)
 
@@ -96,7 +96,7 @@ class TestCompressNoOpRegistersIneffective:
         )
         messages = _build_session(10, words_per_turn=10)
         comp.last_prompt_tokens = 73_000
-        comp._find_tail_cut_by_tokens = lambda msgs, he: he  # force no-op
+        comp._find_tail_cut_by_tokens = lambda msgs, he, **_: he  # force no-op
 
         comp.compress(messages, current_tokens=73_000)
         comp.compress(messages, current_tokens=73_000)
