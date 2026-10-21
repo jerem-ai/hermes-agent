@@ -17,7 +17,7 @@ _TAIL_BYTES = 1024 * 1024
 
 
 def _managed_netloc() -> str:
-    from agent.auxiliary_client import _managed_local_netloc
+    from agent.auxiliary_managed_local import _managed_local_netloc
     return _managed_local_netloc()
 
 

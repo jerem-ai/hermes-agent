@@ -83,7 +83,8 @@ def mount(monkeypatch, tmp_path):
         monkeypatch.setattr(server, name, lambda: None)
     monkeypatch.setattr(ws_mod, "_note_dashboard_client_activity", lambda **kwargs: None)
     monkeypatch.setattr(server, "resolve_skin", lambda: "default")
-    monkeypatch.setattr(server, "_catalog_skills", lambda cat, skills: "")
+    from tui_gateway import command_discovery
+    monkeypatch.setattr(command_discovery, "_catalog_skills", lambda cat, skills, module_loader=None: "")
     return db
 
 

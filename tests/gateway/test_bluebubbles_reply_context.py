@@ -6,7 +6,7 @@ import pytest
 import httpx
 
 from gateway.run_inbound import GatewayInboundMixin
-from tests.gateway.test_bluebubbles import _FakeBlueBubblesRequest, _make_adapter
+from tests.gateway.test_bluebubbles_plugin import _FakeBlueBubblesRequest, _make_adapter
 
 
 async def _deliver(monkeypatch, parent, *, reference="parent", chat="iMessage;-;fixture", **extra):

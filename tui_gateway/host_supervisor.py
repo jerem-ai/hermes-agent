@@ -36,7 +36,10 @@ MUTATOR_ROUTE_TABLE: dict[str, str] = {
 _REGISTRY_NAME = "dashboard-compute-host.json"
 _RESPAWN_WINDOW_SECS = 300.0
 _SHUTDOWN_TIMEOUT_SECS = 10.0
-_STARTUP_TIMEOUT_SECS = 30.0
+# A cold host imports the agent stack before its hello (~1.3s idle, 5s+ on a loaded box). Scout
+# under local inference load has exceeded ten seconds, so startup gets the same bounded room
+# other local subprocess surfaces receive.
+_HELLO_TIMEOUT_SECS = 30.0
 # Late control-ack handlers: a compress that outlives its RPC waiter can run for the full
 # compression ceiling plus a stall-fallback retry, so keep registrations past that — bounded.
 # See #97948.
@@ -256,6 +259,17 @@ class HostSupervisor:
         self._send_frame(
             {"type": "interrupt", "sid": sid, "request_id": request_id or uuid.uuid4().hex})
 
+    def has_pending_turn(self, sid: str) -> bool:
+        """True when a host completion callback is still registered for ``sid``.
+
+        Read by the serving process to tell "the host still owes this session a
+        terminal frame" from "nothing will ever call back for it". Entries are
+        added in :meth:`submit_turn` and removed by ``turn.end``/``turn.error``
+        handling or :meth:`_fail_pending_turns`, all under ``self._lock``.
+        """
+        with self._lock:
+            return any(s == sid for s, _cb in self._pending_turns.values())
+
     def _await_reply(self, frame: dict[str, Any], request_id: str, timeout: float) -> dict:
         """Send ``frame`` and block for the host reply carrying ``request_id``."""
         q: queue.Queue[dict] = queue.Queue(maxsize=1)
@@ -345,11 +359,7 @@ class HostSupervisor:
                              (self._drain_stderr, "compute-host-stderr"),
                              (self._wait_for_exit, "compute-host-wait")):
             threading.Thread(target=target, args=(proc,), name=name, daemon=True).start()
-        # Importing the agent stack can exceed ten seconds when the host is
-        # already saturated by local work. The child has emitted no usable
-        # output until this handshake, so give startup the same bounded room
-        # other local subprocess surfaces receive.
-        if not self._hello_event.wait(timeout=_STARTUP_TIMEOUT_SECS):
+        if not self._hello_event.wait(timeout=_HELLO_TIMEOUT_SECS):
             self._terminate_process(proc)
             raise RuntimeError(f"compute host did not send hello; stderr={self._stderr_tail[-5:]}")
         self._validate_hello()
