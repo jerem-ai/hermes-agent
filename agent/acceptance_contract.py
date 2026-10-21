@@ -146,6 +146,8 @@ def register(session_id: str, spec: dict, *, root_dir: Path | None = None) -> st
 def load(agent) -> tuple[dict, str] | None:
     """Resolve the owning profile and bounded session lineage, including restart/compaction."""
     root_dir = directory(agent)
+    if not root_dir.is_dir():
+        return None  # no contract was ever registered here, so no lineage walk (and no DB reads)
     session = getattr(agent, "session_id", "") or ""
     db = getattr(agent, "_session_db", None)
     seen = set()
@@ -195,7 +197,7 @@ def context(agent) -> str:
     execution_context = target_context(agent)
     try:
         result = report(agent)
-    except (OSError, ValueError, KeyError, TypeError):
+    except Exception:  # noqa: BLE001 - also sqlite3.Error from the lineage walk; compression must not abort
         return HEADER + "\nAcceptance state is unreadable. Completion cannot be verified."
     if result is None:
         return execution_context

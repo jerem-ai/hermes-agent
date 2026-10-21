@@ -152,6 +152,31 @@ def test_unreadable_contract_refuses_completion(agent, tmp_path):
     assert enforce_final(agent, "Everything is done.", {})[1]
 
 
+def test_session_db_error_during_lineage_walk_reads_as_unreadable(agent, tmp_path):
+    import sqlite3
+    from agent.acceptance_contract import HEADER
+
+    attach(agent, make_spec(tmp_path))
+
+    def locked(_sid):
+        raise sqlite3.OperationalError("database is locked")
+
+    child = SimpleNamespace(session_id="child", _session_db=SimpleNamespace(
+        db_path=agent._session_db.db_path, get_session=locked))
+    text = context(child)
+    assert text.startswith(HEADER) and "unreadable" in text
+
+
+def test_profile_without_a_contract_store_never_reads_the_session_db(tmp_path):
+    def must_not_read(_sid):
+        raise AssertionError("no contract store, so no lineage walk")
+
+    bare = SimpleNamespace(session_id="s", _session_db=SimpleNamespace(
+        db_path=tmp_path / "state.db", get_session=must_not_read))
+    assert load(bare) is None
+    assert report(bare) is None
+
+
 def test_expired_receipt_does_not_complete_task(agent, tmp_path, monkeypatch):
     spec = make_spec(tmp_path)
     sha = attach(agent, spec)
