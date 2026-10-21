@@ -452,7 +452,7 @@ def _last_turn_reasoning(messages) -> Optional[Any]:
 
 def _apply_output_hooks(
     agent, final_response, logger, *, platform, effective_task_id, turn_id, original_user_message,
-    messages,
+    messages, preserve_response=False,
 ) -> tuple[Any, bool, Optional[Any]]:
     """Resolve the turn's ``transform_llm_output`` outcome, then fire ``post_llm_call`` once per
     turn after the tool loop. Returns ``(final_response, transformed, pre_transform_response)``.
@@ -463,6 +463,7 @@ def _apply_output_hooks(
     response (e.g. text that only appeared through ``_explain_abnormal_exit``)."""
     final_response, transformed, pre_transform = apply_llm_output_transform(
         agent, final_response, turn_id=turn_id, platform=platform, logger=logger,
+        preserve_response=preserve_response,
     )
     from agent.acceptance_contract import enforce_final
     final_response, _ = enforce_final(agent, final_response, {})
@@ -483,7 +484,7 @@ def _apply_output_hooks(
 
 
 def apply_llm_output_transform(
-    agent, final_response, *, turn_id, platform=None, logger=None,
+    agent, final_response, *, turn_id, platform=None, logger=None, preserve_response=False,
 ) -> tuple[Any, bool, Optional[Any]]:
     """Fire ``transform_llm_output`` once per turn and return
     ``(final_response, transformed, pre_transform_response)``.
@@ -497,6 +498,9 @@ def apply_llm_output_transform(
     same turn get the recorded outcome instead of a second hook firing. Only the current
     turn's not-yet-written text is touched — earlier turns and the system prompt are never
     rewritten (prompt-cache invariant)."""
+    # A harness-owned failure notice must retain the pending step and save status.
+    if preserve_response:
+        return final_response, False, None
     if logger is None:
         from agent.conversation_loop import logger
     recorded = getattr(agent, "_llm_output_transform", None)
@@ -694,7 +698,8 @@ def finalize_turn(
         # gets the recorded outcome back. Either way the tail close below writes the text the
         # user will see, never the raw model text (#44239).
         if final_response and not interrupted:
-            final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
+            final_response, _, _ = apply_llm_output_transform(
+                agent, final_response, turn_id=turn_id, logger=logger, preserve_response=_exhausted_turn)
             final_response = _sanitize_surrogates(final_response)
             from agent.acceptance_contract import enforce_final
             final_response, _ = enforce_final(agent, final_response, {})
@@ -737,6 +742,7 @@ def finalize_turn(
         final_response, _response_transformed, _pre_transform_response = _apply_output_hooks(
             agent, final_response, logger, platform=_platform, effective_task_id=effective_task_id,
             turn_id=turn_id, original_user_message=original_user_message, messages=messages,
+            preserve_response=_exhausted_turn,
         )
 
     # Context engine observation hook: the turn finished with the finalized transcript.

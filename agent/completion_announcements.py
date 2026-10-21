@@ -19,6 +19,17 @@ _ANNOUNCED_ACTION_TAIL_RE = re.compile(
     r"(?:[^.!?\n\x22\u201c\u201d\u00ab\u00bb]|\.(?=[^\s.!?\x22\u201c\u201d\u00ab\u00bb])){0,100}[.:\u2026]?\s*$",
     re.IGNORECASE,
 )
+# An explicit request for time to do more tool work is unfinished even after a long report.
+# Keep the historical short-ack limit for the broader first-person announcement patterns.
+_PENDING_WORK_TAIL_RE = re.compile(
+    r"(?:\bgive me\s+(?:a|one|another|a few|two)\s+(?:second|moment|minute)s?\s+to\s+"
+    r"|\b(?:hang tight|bear with me)\s+while\s+i\s+)"
+    r"(?:check|inspect|verify|search|research|read|open|fetch|look\s+up|look\s+at|compare"
+    r"|run|test|fix|repair|build|install|configure|update|set\s+up)\b"
+    r"(?:[^.!?\n\x22\u201c\u201d\u00ab\u00bb]|\.(?=[^\s.!?\x22\u201c\u201d\u00ab\u00bb])){0,160}"
+    r"[.:\u2026]*\s*$",
+    re.IGNORECASE,
+)
 # Requests that are not asking for action: a [discuss] turn, a question, or a pause/wait/approval stop.
 # Anchored at the START of the request (request mode): a leading [discuss]/translate/advise/explain turn or a
 # leading pause/wait/stop-for-approval. A wait/pause later in an execution request ("Run X, wait for it, then
@@ -153,27 +164,32 @@ def has_user_condition_or_offer(text: str) -> bool:
 
 
 def unfulfilled_action_announcement(text: str, user_text: Any = None) -> bool:
-    """Whether a short reply ENDS on an announced next action that was not taken (stall-guard trigger).
+    """Whether a reply ENDS on an announced next action that was not taken (stall-guard trigger).
 
     The narrow ``trailing_continue_intent`` shapes always count; the broader plain ``let me ...`` /
     ``next, I will ...`` tail counts only when ``user_text`` (the latest real user request) is an
     execution request. Announced waits/pauses and text echoed from the request (translation, quotes)
-    never count. ``trailing_continue_intent`` itself is unchanged for existing callers.
+    never count. Explicit requests for time to do more work also count after longer reports.
+    ``trailing_continue_intent`` itself is unchanged for existing callers.
     """
     t = (text or "").strip()
-    if not t or len(t) > _TRAILING_CONTINUE_INTENT_MAX_CHARS:
+    if not t:
         return False
     request = user_text.strip() if isinstance(user_text, str) else ""
-    tail = t[-160:]
+    tail = t[-320:]
     # The veto covers every visible-text candidate, narrow ``let me now`` included.
     if request_forbids_action(request):
         return False
     # Leading conditions/offers anywhere in the reply make it a user-gated stop, not a stall.
     if has_user_condition_or_offer(t):
         return False
-    match = _TRAILING_CONTINUE_INTENT_RE.search(tail)
+    match = None
+    if len(t) <= _TRAILING_CONTINUE_INTENT_MAX_CHARS:
+        match = _TRAILING_CONTINUE_INTENT_RE.search(tail)
+        if match is None and request:
+            match = _ANNOUNCED_ACTION_TAIL_RE.search(tail)
     if match is None and request:
-        match = _ANNOUNCED_ACTION_TAIL_RE.search(tail)
+        match = _PENDING_WORK_TAIL_RE.search(tail)
     if match is None:
         return False
     # A quoted example ("...", `...`, typographic) is output, not an announcement.

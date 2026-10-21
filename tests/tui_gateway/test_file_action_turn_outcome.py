@@ -8,10 +8,14 @@ from tui_gateway.prompt_turn import _turn_outcome
 guard_agent = helpers.guard_agent
 
 
-@pytest.mark.parametrize("stalls", [True, False])
-def test_desktop_status_matches_native_file_action_result(guard_agent, stalls):
+@pytest.mark.parametrize("stalls,text", [
+    (True, "Let me add the selected entry to /tmp/雪/config:"),
+    (False, "Let me add one clarification: access already works."),
+    (True, "Give me a minute to check what's available..."),
+    (False, 'The subtask is complete. The log said "give me a minute to check..."'),
+])
+def test_desktop_status_matches_native_file_action_result(guard_agent, stalls, text):
     agent, db = guard_agent
-    text = "Let me add the selected entry to /tmp/雪/config:" if stalls else "Let me add one clarification: access already works."
     stages = [_tool()] + [_final(text)] * (3 if stalls else 1)
     result, effects = _run(agent, "Finish the authorized setup.", stages)
     raw, status, _ = _turn_outcome(result)
