@@ -955,13 +955,41 @@ class TestStepLabels:
 
 class TestHeaderVariants:
 
+    def _patch(self, monkeypatch, native, aux, lightpanda=False):
+        monkeypatch.setattr("tools.vision_tools._should_use_native_vision_fast_path", lambda: native)
+        monkeypatch.setattr("tools.vision_tools.check_video_requirements", lambda: aux)
+        monkeypatch.setattr(
+            "tools.browser_tool_lightpanda_fallback.lightpanda_engine_status",
+            lambda: (lightpanda, "used" if lightpanda else ""),
+        )
+
     def test_text_only_header_teaches_text_workflow(self, monkeypatch):
-        monkeypatch.setattr(
-            "tools.vision_tools._should_use_native_vision_fast_path", lambda: False
-        )
-        monkeypatch.setattr(
-            "tools.browser_tool_lightpanda_fallback.lightpanda_engine_status", lambda: (False, "")
-        )
+        self._patch(monkeypatch, native=False, aux=False)
+        assert bu_cli._description_header() == bu_cli._HEADER_BASE + bu_cli._HEADER_TEXT_ONLY
+
+    def test_text_only_model_with_aux_vision_is_pointed_at_vision_analyze(self, monkeypatch):
+        self._patch(monkeypatch, native=False, aux=True)
+        header = bu_cli._description_header()
+        assert header == bu_cli._HEADER_BASE + bu_cli._HEADER_AUX_VISION
+        assert "vision_analyze" in header and "capture_screenshot()" in header
+        assert "skip the screenshot-driven workflow" not in header
+
+    def test_vision_model_ignores_aux_route(self, monkeypatch):
+        self._patch(monkeypatch, native=True, aux=True)
+        assert bu_cli._description_header() == bu_cli._HEADER_BASE + bu_cli._HEADER_VISION
+
+    def test_lightpanda_stays_text_first_with_aux_vision(self, monkeypatch):
+        self._patch(monkeypatch, native=False, aux=True, lightpanda=True)
+        header = bu_cli._description_header()
+        assert header.endswith(bu_cli._HEADER_LIGHTPANDA)
+        assert bu_cli._HEADER_AUX_VISION not in header
+
+    def test_aux_check_crash_falls_back_to_text_only(self, monkeypatch):
+        def boom():
+            raise RuntimeError("resolver crashed")
+
+        self._patch(monkeypatch, native=False, aux=False)
+        monkeypatch.setattr("tools.vision_tools.check_video_requirements", boom)
         assert bu_cli._description_header() == bu_cli._HEADER_BASE + bu_cli._HEADER_TEXT_ONLY
 
 

@@ -909,6 +909,16 @@ _HEADER_TEXT_ONLY = (
     "js(\"document.querySelector('…').click()\") for clicks — skip the screenshot-driven workflow described below."
 )
 
+# Text-only main model with an auxiliary vision route: the screenshot workflow still works,
+# through vision_analyze instead of the model's own eyes.
+_HEADER_AUX_VISION = (
+    " Your model cannot view images directly, so work text-first: page_info() for state, js() for "
+    "reading/extracting DOM text, fill_input(selector, text) for inputs, and "
+    "js(\"document.querySelector('…').click()\") for clicks. When the answer is visual (canvas, images, "
+    "colors, layout) or text extraction comes back empty, print(capture_screenshot()) and pass that path to "
+    "vision_analyze with a specific question."
+)
+
 # Appended when the local engine is Lightpanda: no graphical renderer, and one CDP
 # connection holds one page — a second Target.createTarget fails with
 # TargetAlreadyLoaded (drop the new_tab() sentence once lightpanda-io/browser#1962 lands).
@@ -940,8 +950,11 @@ def _description_header() -> str:
     if _lazy_call("tools.browser_tool_lightpanda_fallback", "lightpanda_engine_status", (False, ""),
                   "lightpanda engine status unavailable")[0]:  # no screenshots, whatever the model sees
         return _HEADER_BASE + _HEADER_TEXT_ONLY + _HEADER_LIGHTPANDA
-    vision = _lazy_call("tools.vision_tools", "_should_use_native_vision_fast_path", False, "")
-    return _HEADER_BASE + (_HEADER_VISION if vision else _HEADER_TEXT_ONLY)
+    if _lazy_call("tools.vision_tools", "_should_use_native_vision_fast_path", False, ""):
+        return _HEADER_BASE + _HEADER_VISION
+    if _lazy_call("tools.vision_tools", "check_video_requirements", False, "aux vision check failed"):
+        return _HEADER_BASE + _HEADER_AUX_VISION
+    return _HEADER_BASE + _HEADER_TEXT_ONLY
 
 
 def _dynamic_schema_overrides() -> dict:
