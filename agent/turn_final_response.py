@@ -12,6 +12,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from agent.message_metadata import append_message
+from agent.completion_announcements import open_todo_nudge as _open_todo_nudge
 from agent.reasoning_promotion import answer_in_reasoning_capability
 from agent.repetition_guard import STOP_PATH_MIN_CHARS, is_runaway_repetition
 from agent.turn_failure_copy import (
@@ -56,7 +57,7 @@ def _continuation_choice(agent, final_response, promoted, messages, user_message
     )
     from agent.completion_announcements import (
         latest_execution_request_text, unfulfilled_action_announcement,
-        request_forbids_action, has_user_condition_or_offer,
+        request_forbids_action, has_user_condition_or_offer, open_todo_stall,
     )
     _ack_mode = intent_ack_continuation_mode(agent)
     # Said-continue-but-stopped guard: no tool calls but the short reply TAILS with an
@@ -95,11 +96,22 @@ def _continuation_choice(agent, final_response, promoted, messages, user_message
         and _tool_rows > 0
         and looks_like_degenerate_final(_stall_text, user_message=user_message)
     )
-    # Precedence: an announced next action outranks the fragment shape; the codex ack is last.
+    # Open-todo guard: real tool work this turn, then a tool-less stop while the model's own todo
+    # list is still open. One nudge per tool-work window (the nudge row closes it, like the degenerate
+    # guard); a repeated stop is delivered unchanged, never failed, because it may be legitimate.
+    _todo_stall = (
+        bool(getattr(agent, "_stall_guards", True))
+        and not _stall_candidate
+        and continuations < 2
+        and open_todo_stall(agent, _stall_text, _stall_request, _tool_rows)
+    )
+    # Precedence: an announced next action outranks the fragment shape, then open todos; the codex ack is last.
     if _stall_continue_intent:
         _continuation_kind = "stall"
     elif _degenerate_final:
         _continuation_kind = "degenerate"
+    elif _todo_stall:
+        _continuation_kind = "todo"
     elif (
         _ack_mode != "off"
         and agent.valid_tool_names
@@ -303,6 +315,11 @@ def finish_text_response(
                 "intent with no tool calls — re-prompting to act "
                 "(%d/2)", codex_ack_continuations + 1,
             )
+        elif _continuation_kind == "todo":
+            logger.info(
+                "Open-todo guard: tool-less stop with open todo items after %d tool result(s) — "
+                "re-prompting (%d/2)", _tool_rows, codex_ack_continuations + 1,
+            )
         elif _continuation_kind == "degenerate":
             logger.warning(
                 "Degenerate final: %d-char fragment %r ended the turn after %d tool result(s) — "
@@ -321,6 +338,7 @@ def finish_text_response(
             "role": "user",
             "content": (
                 _DEGENERATE_FINAL_NUDGE if _continuation_kind == "degenerate"
+                else _open_todo_nudge(agent) if _continuation_kind == "todo"
                 else _CODEX_ACK_CONTINUATION_NUDGE
             ),
         })

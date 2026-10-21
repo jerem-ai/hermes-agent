@@ -222,3 +222,53 @@ def latest_execution_request_text(messages: list[dict[str, Any]]) -> str:
             text = (_summarize_user_message_for_log(content) or "").strip()
         return text
     return ""
+
+
+# Open-todo stall signal (wording-independent). The phrase guard above recognizes a finite set of
+# announcement shapes; this one reads the model's own plan instead. A reply that asks the user
+# something or names what blocks the work stays a valid stopping point; these patterns only exempt.
+_OPEN_TODO_STATUSES = frozenset({"pending", "in_progress"})
+_QUESTION_TAIL_RE = re.compile(r"\?[\s\"'\u201d\u2019)\]*_`]*$")
+_BLOCKER_RE = re.compile(
+    r"\b(?:blocked|blocker|can(?:no|['\u2019])t\s+(?:proceed|continue|finish)"
+    r"|unable\s+to\s+(?:proceed|continue|finish)|needs?\s+(?:you|your)\b|requires?\s+your\b"
+    r"|waiting\s+(?:on|for)\s+(?:you|your)\b|missing\s+(?:credentials?|access|permissions?))",
+    re.IGNORECASE,
+)
+
+
+def open_todo_items(agent: Any) -> list[dict[str, str]]:
+    """Pending or in-progress items in the agent's own todo list (empty when it has none)."""
+    read = getattr(getattr(agent, "_todo_store", None), "read", None)
+    if not callable(read):
+        return []
+    try:
+        return [i for i in read() if str(i.get("status", "")).lower() in _OPEN_TODO_STATUSES]
+    except Exception:
+        return []
+
+
+def open_todo_stall(agent: Any, text: str, request: Any, tool_rows: int) -> bool:
+    """Whether a tool-less stop leaves the model's own plan open after real tool work this turn.
+
+    Requires tool results in this turn (so a stale list never hijacks an unrelated question), an
+    open todo item, and a reply that neither ends on a question, states a blocker, waits on the
+    user's approval, nor answers a request that forbade action."""
+    if tool_rows <= 0 or not getattr(agent, "valid_tool_names", None):
+        return False
+    t = (text or "").strip()
+    if not t or not open_todo_items(agent):
+        return False
+    if _QUESTION_TAIL_RE.search(t[-200:]) or _BLOCKER_RE.search(t):
+        return False
+    return not (request_forbids_action(request) or has_user_condition_or_offer(t))
+
+
+def open_todo_nudge(agent: Any) -> str:
+    """Re-prompt naming the open items; a false positive costs one call, never the answer."""
+    names = "; ".join(str(i.get("content", ""))[:80] for i in open_todo_items(agent)[:3])
+    return (
+        "[System: Your todo list still has open items (" + names + "). If the task is unfinished, "
+        "continue with the next item now using your tools. If something blocks it, say exactly what "
+        "blocks it. If you already finished, update the todo list and send your answer again.]"
+    )
