@@ -5309,10 +5309,11 @@ Write only the summary body. Do not include any preamble or prefix."""
         blank = self._blank_echo_indices_after(messages, self._find_last_user_message_idx(messages, 0))
         return [m for idx, m in enumerate(messages) if idx not in blank] if blank else messages
 
-    def _compress_window(self, messages: list[dict[str, Any]]) -> tuple[int, int]:
+    def _compress_window(self, messages: list[dict[str, Any]],
+                         token_budget: int | None = None) -> tuple[int, int]:
         """Return ``(compress_start, compress_end)`` for the summarizable middle."""
         compress_start = self._align_boundary_forward(messages, self._protect_head_size(messages))
-        compress_end = self._find_tail_cut_by_tokens(messages, compress_start)
+        compress_end = self._find_tail_cut_by_tokens(messages, compress_start, token_budget=token_budget)
         # A role collision can merge the summary into the first tail row; keep an actionable user
         # event out of that slot by retaining an older assistant/tool bridge.
         latest_actionable_idx = self._find_last_user_message_idx(messages, 0)
@@ -5612,10 +5613,9 @@ Write only the summary body. Do not include any preamble or prefix."""
             )
             return canonical_messages
         turns_to_summarize = messages[compress_start:compress_end]
-        # Lean mode demotes stale tail tool results before summary generation so stubs exist even if it aborts.
-        if getattr(self, "tail_mode", "lean") == "lean":
-            messages = self._demote_stale_tail_tools(messages, compress_end)
-        scan = self._scan_window_handoffs(messages, compress_start, compress_end, turns_to_summarize)
+        from agent.context_compression_pressure import scan_pressure_window
+        messages, compress_end, scan = scan_pressure_window(
+            self, messages, compress_start, compress_end, current_tokens)
         turns_to_summarize = scan.turns_to_summarize
         self._record_compression_regions(
             head_messages=messages[:compress_start], middle_messages=turns_to_summarize, tail_messages=messages[compress_end:],
