@@ -182,6 +182,120 @@ def test_embedded_manifest_wins_over_parent_repo_and_validates_lock(tmp_path):
     assert invalid["source_revision"] is None
 
 
+def _packaged_tree(root: Path) -> tuple[Path, str]:
+    nested = root / "installed" / "hermes"
+    (nested / "pkg" / "ünïcode").mkdir(parents=True)
+    (nested / "pkg" / "ünïcode" / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (nested / "pkg" / "\U0001d521-astral.txt").write_text("astral\n", encoding="utf-8")
+    (nested / "pkg" / "Ａ-wide.txt").write_text("wide\n", encoding="utf-8")
+    lock = nested / "uv.lock"
+    lock.write_text("locked\n", encoding="utf-8")
+    for path in sorted(nested.rglob("*"), reverse=True):
+        path.chmod(0o555 if path.is_dir() else 0o444)
+    nested.chmod(0o555)
+    content = runtime_identity._installed_content_digest(nested)
+    assert content is not None
+    manifest = {
+        "contract_version": 1,
+        "artifact": {
+            "format": "tar.gz",
+            "filesystem": "read-only",
+            "content_sha256": content[0],
+            "content_entry_count": content[1],
+        },
+        "source": {"revision": "a" * 40, "tree": "b" * 40, "dirty": False},
+        "locks": {"uv.lock": hashlib.sha256(lock.read_bytes()).hexdigest()},
+    }
+    nested.chmod(0o755)
+    (nested / runtime_identity._PACKAGED_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    (nested / runtime_identity._PACKAGED_MANIFEST).chmod(0o444)
+    nested.chmod(0o555)
+    return nested, content[0]
+
+
+def _launcher_claim(monkeypatch, content_sha256: str, fingerprint: str) -> None:
+    monkeypatch.setenv(runtime_identity._LAUNCHER_SOURCE_SHA256_ENV, content_sha256)
+    monkeypatch.setenv(runtime_identity._LAUNCHER_SOURCE_FINGERPRINT_ENV, fingerprint)
+
+
+def test_launcher_fingerprint_skips_the_content_walk_for_the_tree_it_verified(tmp_path, monkeypatch):
+    nested, content = _packaged_tree(tmp_path)
+    _launcher_claim(monkeypatch, content, runtime_identity._installed_stat_fingerprint(nested))
+
+    def no_walk(*_args, **_kwargs):
+        raise AssertionError("contents were hashed again")
+
+    monkeypatch.setattr(runtime_identity, "_installed_content_digest", no_walk)
+    captured = runtime_identity.capture_source_identity(nested, Path("/runtime/python"))
+
+    assert captured["source_identity_provenance"] == "embedded-manifest"
+    assert captured["source_content_sha256"] == content
+    assert captured["source_content_verified_by"] == "launcher"
+
+
+def test_a_file_changed_after_the_launcher_verified_it_is_caught(tmp_path, monkeypatch):
+    nested, content = _packaged_tree(tmp_path)
+    _launcher_claim(monkeypatch, content, runtime_identity._installed_stat_fingerprint(nested))
+    module = nested / "pkg" / "ünïcode" / "module.py"
+    module.chmod(0o644)
+    module.write_text("VALUE = 2\n", encoding="utf-8")
+    module.chmod(0o444)
+
+    captured = runtime_identity.capture_source_identity(nested, Path("/runtime/python"))
+
+    assert captured["source_identity_provenance"] == "invalid-embedded-manifest"
+    assert captured["source_content_sha256"] is None
+
+
+def test_a_launcher_claim_for_other_contents_falls_back_to_hashing(tmp_path, monkeypatch):
+    nested, content = _packaged_tree(tmp_path)
+    _launcher_claim(monkeypatch, "sha256:" + "0" * 64, runtime_identity._installed_stat_fingerprint(nested))
+
+    captured = runtime_identity.capture_source_identity(nested, Path("/runtime/python"))
+
+    assert captured["source_content_sha256"] == content
+    assert captured["source_content_verified_by"] == "hermes"
+
+    _launcher_claim(monkeypatch, content, "not-a-fingerprint")
+    assert runtime_identity.capture_source_identity(
+        nested, Path("/runtime/python")
+    )["source_content_verified_by"] == "hermes"
+
+
+def test_stat_fingerprint_matches_the_launcher_line_format(tmp_path):
+    nested, _content = _packaged_tree(tmp_path)
+    root = nested.resolve()
+    expected = hashlib.sha256()
+
+    def entry(path: Path, relative: str | None) -> None:
+        metadata = path.lstat()
+        if relative is None:
+            expected.update(
+                f"{path}\0{metadata.st_mode}\0{metadata.st_ino}\0{metadata.st_mtime_ns}\0{metadata.st_ctime_ns}\n".encode()
+            )
+        else:
+            expected.update(
+                f"{relative}\0{metadata.st_mode}\0{metadata.st_size}\0{metadata.st_ino}"
+                f"\0{metadata.st_mtime_ns}\0{metadata.st_ctime_ns}\n".encode()
+            )
+
+    entry(root, None)
+    # JavaScript sorts names by UTF-16 code unit, which puts the astral
+    # U+1D521 (surrogate 0xD835) before U+FF21; code point order would not.
+    for relative in [
+        "hermes-runtime-manifest.json",
+        "pkg",
+        "pkg/ünïcode",
+        "pkg/ünïcode/module.py",
+        "pkg/\U0001d521-astral.txt",
+        "pkg/Ａ-wide.txt",
+        "uv.lock",
+    ]:
+        entry(root / relative, relative)
+
+    assert runtime_identity._installed_stat_fingerprint(root) == f"sha256:{expected.hexdigest()}"
+
+
 def test_source_identity_is_bootstrap_snapshot(monkeypatch):
     before = runtime_identity.source_identity()
     monkeypatch.setattr(runtime_identity, "capture_source_identity", lambda *_args: {"changed": True})

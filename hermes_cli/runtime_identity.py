@@ -8,6 +8,7 @@ import json
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 from functools import lru_cache
@@ -28,6 +29,9 @@ RUNTIME_IDENTITY_CONTRACT_VERSION = 1
 _PACKAGED_MANIFEST = "hermes-runtime-manifest.json"
 _OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_PREFIXED_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_LAUNCHER_SOURCE_SHA256_ENV = "HERMES_RUNTIME_VERIFIED_SOURCE_SHA256"
+_LAUNCHER_SOURCE_FINGERPRINT_ENV = "HERMES_RUNTIME_VERIFIED_SOURCE_FINGERPRINT"
 _TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
 _TAILSCALE_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 _LOCAL_SUFFIXES = (".local", ".lan", ".home", ".internal")
@@ -261,6 +265,67 @@ def _installed_content_digest(
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}", len(entries)
 
 
+def _installed_stat_fingerprint(root: Path) -> str | None:
+    """Fingerprint every entry's metadata under root without reading contents.
+
+    Byte for byte the format of Maestro's installedStatFingerprint for one
+    root: path, mode, size, inode, and modification and change times in
+    nanoseconds, depth first in UTF-16 name order. A write, chmod, rename or
+    replacement moves the change time or the inode, and a process cannot set
+    the change time back.
+    """
+
+    digest = hashlib.sha256()
+
+    def line(text: str) -> None:
+        digest.update(text.encode("utf-8", "surrogateescape"))
+
+    def walk(directory: Path, prefix: str) -> None:
+        names = sorted(
+            os.listdir(directory),
+            key=lambda name: name.encode("utf-16-be", "surrogatepass"),
+        )
+        for name in names:
+            candidate = directory / name
+            relative = f"{prefix}{name}"
+            metadata = candidate.lstat()
+            line(
+                f"{relative}\0{metadata.st_mode}\0{metadata.st_size}\0{metadata.st_ino}"
+                f"\0{metadata.st_mtime_ns}\0{metadata.st_ctime_ns}\n"
+            )
+            if stat.S_ISDIR(metadata.st_mode):
+                walk(candidate, f"{relative}/")
+
+    try:
+        metadata = root.lstat()
+        line(
+            f"{root}\0{metadata.st_mode}\0{metadata.st_ino}"
+            f"\0{metadata.st_mtime_ns}\0{metadata.st_ctime_ns}\n"
+        )
+        walk(root, "")
+    except (OSError, RuntimeError, UnicodeError, RecursionError):
+        return None
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _launcher_verified_content(root: Path, content_sha256: str) -> bool:
+    """Whether the launcher already hashed this exact tree to content_sha256.
+
+    Maestro checks the pinned runtime's contents against its receipt before
+    it starts a gateway, then passes the digest it verified and the metadata
+    fingerprint of the tree at that moment. Matching metadata means the
+    contents are the ones it hashed, so the gateway can skip its own walk
+    (0.4 s warm, 1.7 s cold on Scout). Anything else hashes the contents.
+    """
+
+    verified = os.environ.get(_LAUNCHER_SOURCE_SHA256_ENV, "").strip()
+    fingerprint = os.environ.get(_LAUNCHER_SOURCE_FINGERPRINT_ENV, "").strip()
+    if verified != content_sha256 or not _PREFIXED_DIGEST.fullmatch(fingerprint):
+        # branch-divergence: intentional — no launcher claim, so the caller hashes the contents itself
+        return False
+    return _installed_stat_fingerprint(root) == fingerprint
+
+
 def _read_packaged_source(manifest_path: Path) -> dict | None:
     try:
         if manifest_path.stat().st_mode & 0o222:
@@ -310,11 +375,12 @@ def _read_packaged_source(manifest_path: Path) -> dict | None:
                 return None
         except OSError:
             return None
-    observed_content = _installed_content_digest(manifest_path.parent)
-    if observed_content != (
-        artifact["content_sha256"],
-        artifact["content_entry_count"],
-    ):
+    expected_content = (artifact["content_sha256"], artifact["content_entry_count"])
+    if _launcher_verified_content(manifest_path.parent, artifact["content_sha256"]):
+        verified_by = "launcher"
+    elif _installed_content_digest(manifest_path.parent) == expected_content:
+        verified_by = "hermes"
+    else:
         return None
     return {
         "source_revision": revision,
@@ -322,6 +388,7 @@ def _read_packaged_source(manifest_path: Path) -> dict | None:
         "source_dirty": False,
         "source_identity_provenance": "embedded-manifest",
         "source_content_sha256": artifact["content_sha256"],
+        "source_content_verified_by": verified_by,
     }
 
 
