@@ -73,6 +73,9 @@ def test_pressure_does_not_override_required_or_affordable_tail(case):
     pressure = 58493
     if case == "below_trigger":
         pressure = 50000
+        # "Affordable" means the post-handoff work fits the tail budget. The fixture was sized
+        # against the unscaled 10K lean floor; 64K windows now get a scaled floor, so pin it here.
+        cc.tail_token_budget = 10_000
     elif case == "multimodal_request":
         messages[2]["content"] = [{"type": "text", "text": TASK},
                                    {"type": "image_url", "image_url": {"url": "https://example.invalid/fixture.png"}}]

@@ -167,3 +167,38 @@ class TestTailBudgetProportionality:
         one_turn = sum(_estimate_msg_budget_tokens(m) for m in msgs[-4:])
         assert tail_tokens <= ctx * TAIL_MAX_CONTEXT_FRACTION + one_turn
         assert end - start >= (len(msgs) - start) // 2, (start, end, len(msgs))
+
+
+class TestLeanBudgetsScaleBelowReferenceWindow:
+    """The fixed lean budgets were sized for 128K+ windows. On a 64K local model (Scout's
+    Qwen3.8 27B on TARS) the unscaled 10K tail floor (+1.5x overrun), a ~7K-token summary target
+    and a ~22K system prompt left ~11K of room below the trigger: one tool-heavy Desktop turn
+    compacted 16 times in 96 minutes, each pass rewriting a ~7K-token summary."""
+
+    def test_64k_window_scales_tail_floor_and_session_log_target(self):
+        comp = _make(65_536)
+        assert comp.tail_token_budget == int(cc.LEAN_TAIL_FLOOR_TOKENS * 65_536 / 128_000)
+        assert comp.lean_session_log_budget_tokens == int(cc._LEAN_SESSION_LOG_BUDGET_TOKENS * 65_536 / 128_000)
+        prompt = comp._build_summary_prompt("turns", 3_000, None, "", True)
+        assert f"Spend up to ~{comp.lean_session_log_budget_tokens} tokens here" in prompt
+        assert f"Target ~{3_000 + comp.lean_session_log_budget_tokens} tokens." in prompt
+        assert "Spend up to ~4000 tokens here" not in prompt
+
+    def test_reference_and_larger_windows_are_byte_identical(self):
+        for ctx in (128_000, 131_072, 200_000, 1_000_000):
+            comp = _make(ctx)
+            assert comp.lean_session_log_budget_tokens == cc._LEAN_SESSION_LOG_BUDGET_TOKENS, ctx
+            assert comp.tail_token_budget == max(
+                cc.LEAN_TAIL_FLOOR_TOKENS, min(cc.LEAN_TAIL_CAP_TOKENS, int(ctx * 0.025))
+            ), ctx
+            prompt = comp._build_summary_prompt("turns", 3_000, None, "", True)
+            assert cc._LEAN_SESSION_LOG_SECTION in prompt, ctx
+            assert "Target ~7000 tokens." in prompt, ctx
+
+    def test_legacy_tail_mode_has_no_session_log_section(self):
+        comp = _make(65_536)
+        comp.tail_mode = "legacy"
+        comp._tail_token_budget = None
+        prompt = comp._build_summary_prompt("turns", 3_000, None, "", True)
+        assert cc._LEAN_SESSION_LOG_HEADING not in prompt
+        assert "Target ~3000 tokens." in prompt
