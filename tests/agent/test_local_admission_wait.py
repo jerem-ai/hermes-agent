@@ -87,6 +87,17 @@ def test_streaming_does_not_issue_a_second_probe_for_known_admission_refusal():
     assert call.agent._stream_5xx_probe_ts is None
 
 
+def test_older_runtime_uses_its_native_status_and_thinking_callbacks(monkeypatch):
+    legacy = SimpleNamespace(base_url="http://localhost:8790/v1", platform="cli",
+        _current_streamed_assistant_text="", _has_content_after_think_block=bool,
+        _vprint=MagicMock(), thinking_callback=MagicMock(), _touch_activity=MagicMock())
+    monkeypatch.setattr("agent.turn_recovery.interruptible_backoff_sleep", lambda *args, **kw: None)
+    assert wait_for_local_admission(legacy, error("local_busy"), TurnRetryState(),
+        messages=[], conversation_history=[], api_call_count=1) == {"action": "continue"}
+    assert legacy._vprint.call_args.kwargs == {"force": True}
+    assert legacy.thinking_callback.call_args.args == legacy._vprint.call_args.args
+
+
 @pytest.mark.parametrize("outcome,redirect,action", [({"interrupted": True}, False, "return"), (None, True, "break")])
 def test_stop_and_steer_use_native_interrupt_path(monkeypatch, outcome, redirect, action):
     retry = TurnRetryState(restart_with_redirected_messages=redirect)

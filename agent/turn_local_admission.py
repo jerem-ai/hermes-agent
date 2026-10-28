@@ -45,8 +45,17 @@ def wait_for_local_admission(
 
     hint = "press Esc to stop" if str(getattr(agent, "platform", "")).lower() in {"cli", "tui", "desktop"} else "cancel this turn to stop waiting"
     notice = f"Waiting for the local model to become available. The pending step will resume automatically; {hint}."
-    agent._emit_diagnostic_status(notice)
-    agent._emit_diagnostic_wait(notice)
+    # Older runtimes expose these through _vprint and thinking_callback.
+    emit_status = getattr(agent, "_emit_diagnostic_status", None)
+    if emit_status is None:
+        agent._vprint(notice, force=True)
+    else:
+        emit_status(notice)
+    emit_wait = getattr(agent, "_emit_diagnostic_wait", None)
+    if emit_wait is not None:
+        emit_wait(notice)
+    elif agent.thinking_callback:
+        agent.thinking_callback(notice)
     agent._touch_activity("Waiting for local model admission")
     interrupted = interruptible_backoff_sleep(
         agent, 15.0, retry, messages=messages, conversation_history=conversation_history,
