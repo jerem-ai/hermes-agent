@@ -119,9 +119,9 @@ def test_real_turn_resumes_after_more_busy_refusals_than_recovery_cycles(recover
     a._disable_streaming = True
     response = httpx.Response(502, request=httpx.Request("POST", a.base_url))
     refusal = InternalServerError("not admitted", response=response, body=error("local_busy").body)
-    a.client.chat.completions.create.side_effect = [refusal] * 8 + [_mock_response(content="Resumed", finish_reason="stop")]
+    a.client.chat.completions.create.side_effect = [refusal] * 60 + [_mock_response(content="Resumed", finish_reason="stop")]
     monkeypatch.setattr("agent.turn_recovery.interruptible_backoff_sleep", lambda *args, **kw: None)
     result = a.run_conversation("Continue from the saved step.")
     assert result["completed"] is True
     assert result["final_response"] == "Resumed"
-    assert a.client.chat.completions.create.call_count == 9
+    assert a.client.chat.completions.create.call_count == 61
