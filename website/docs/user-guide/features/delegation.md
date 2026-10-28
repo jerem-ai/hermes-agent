@@ -353,6 +353,9 @@ delegation:
 
 A child that exhausts its budget returns with `exit_reason: max_iterations` and `truncated: true`, so the parent can tell a budget stop from a completed task.
 
+`delegation.max_iterations: 0` and `unlimited` both disable the iteration limit,
+using the same values as `agent.max_turns`. Positive integers keep their stated limit.
+
 ## Child Timeout
 
 By default there is **no wall-clock timeout** on subagents. Children fail only from what they're actually doing — API errors, tool errors, or hitting their iteration budget — never from a delegation-level stopwatch. Earlier releases shipped a hard cap (300s, later 600s), which kept killing legitimately busy children mid-task: deep code reviews, large research fan-outs, and slow reasoning models routinely need more than 10 minutes while making steady progress the whole time.

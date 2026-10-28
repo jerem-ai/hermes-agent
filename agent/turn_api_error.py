@@ -129,6 +129,14 @@ def handle_api_error(
         reason=classified.reason.value,
     )
 
+    from agent.turn_local_admission import wait_for_local_admission
+    admission = wait_for_local_admission(
+        agent, api_error, _retry, messages=messages,
+        conversation_history=conversation_history, api_call_count=api_call_count,
+    )
+    if admission is not None:
+        return _verdict(admission["action"], admission.get("result"))
+
     _recovered, recovered_with_pool = recover_after_classification(
         agent, api_error, classified, _retry, status_code=status_code, error_context=error_context,
         messages=messages, api_messages=api_messages,

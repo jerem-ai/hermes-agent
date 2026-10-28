@@ -3661,12 +3661,9 @@ class _StreamingCall(StreamingWaitMonitor):
     def _unmask_server_error_with_nonstreaming(self, e: Exception) -> bool:
         """One non-streaming re-issue when a 5xx killed the stream before any delta.
 
-        Some gateways validate the request only on their non-streaming path and crash
-        opaquely ("500 something went wrong") when streaming — the real 4xx, with its
-        actionable message, never reaches the user through stream retries. One
-        non-streaming probe per 60s window (timestamped on the agent: each outer retry
-        builds a fresh _StreamingCall, so an instance flag would re-probe every attempt)
-        surfaces it: on success the response is delivered for this turn WITHOUT latching
+        Some gateways validate only non-streaming requests and crash opaquely on streams.
+        One non-streaming probe per 60s window, tracked on the agent across _StreamingCall
+        instances, surfaces the underlying 4xx. Success delivers for this turn WITHOUT latching
         non-streaming (a transient gateway 500 must not permanently disable streaming);
         on a probe 4xx that error REPLACES the opaque 5xx; any other probe failure keeps
         the original error. The successful delivery is bracketed by its own stream
@@ -3679,6 +3676,9 @@ class _StreamingCall(StreamingWaitMonitor):
         True = handled (caller must not overwrite result); False = propagate ``e``.
         """
         if getattr(self.agent, "_interrupt_requested", False):
+            return False
+        from agent.turn_local_admission import local_admission_pending
+        if local_admission_pending(self.agent, e):
             return False
         if _streams_llamacpp(self.agent):
             # Same error either way, and the router can't cancel this probe once its watchdog gives up.
