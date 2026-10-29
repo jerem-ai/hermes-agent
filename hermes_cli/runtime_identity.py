@@ -492,6 +492,7 @@ def effective_runtime_identity(agent) -> dict:
                 protocol_version=BROKER_PROTOCOL_VERSION,
                 route_id=broker_route_id(),
                 transport="inherited-fd",
+                supported_auxiliary_roles=["vision"],
             )
             from hermes_constants import get_hermes_home
 

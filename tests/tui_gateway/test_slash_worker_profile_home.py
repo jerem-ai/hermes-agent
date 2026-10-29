@@ -14,11 +14,13 @@ def test_slash_worker_accepts_profile_home():
             get_hermes_home=MagicMock(return_value=Path("/tmp/hermes_test")),
         ),
     }):
+        # Imports may query host executables. Mock only the worker launch.
+        from tui_gateway.server import _SlashWorker
+
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.stdout = MagicMock()
             mock_popen.return_value.stderr = MagicMock()
 
-            from tui_gateway.server import _SlashWorker
 
             # Test initialization with profile_home
             worker = _SlashWorker(

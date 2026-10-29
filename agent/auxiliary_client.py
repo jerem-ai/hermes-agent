@@ -7555,6 +7555,18 @@ def resolve_vision_provider_client(
     )
     requested = _normalize_vision_provider(requested)
 
+    if requested == "broker":
+        from hermes_cli.broker_mode import broker_mode_requested
+        from hermes_cli.broker_transport import AsyncBrokerOpenAIClient, build_broker_openai_client
+
+        if (not broker_mode_requested() or not resolved_model
+                or resolved_base_url or resolved_api_key
+                or resolved_api_mode not in (None, "chat_completions")):
+            raise RuntimeError("Broker vision requires an inherited capability and a bound model")
+        client = (AsyncBrokerOpenAIClient(resolved_model) if async_mode
+                  else build_broker_openai_client(resolved_model))
+        return "broker", client, resolved_model
+
     def _finalize(resolved_provider: str, sync_client: Any, default_model: Optional[str]):
         if sync_client is None:
             return resolved_provider, None, None
