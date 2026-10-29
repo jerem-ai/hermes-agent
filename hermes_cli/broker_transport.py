@@ -8,6 +8,7 @@ non-inheritable before any agent or tool subprocess can start.
 from __future__ import annotations
 
 import json
+import asyncio
 import math
 import os
 import threading
@@ -218,3 +219,19 @@ class BrokerOpenAIClient:
 
 def build_broker_openai_client(model: str) -> BrokerOpenAIClient:
     return BrokerOpenAIClient(model=model)
+
+
+class AsyncBrokerOpenAIClient:
+    """Nonstreaming auxiliary calls on the same serialized broker descriptor."""
+
+    def __init__(self, model: str):
+        self._sync = build_broker_openai_client(model)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs: Any) -> Any:
+        if kwargs.get("stream"):
+            raise BrokerProtocolError("Broker auxiliary calls require nonstreaming delivery")
+        return await asyncio.to_thread(self._sync.chat.completions.create, **kwargs)
+
+    async def close(self) -> None:
+        return None
