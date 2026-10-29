@@ -97,14 +97,13 @@ jobs:
         # set is identical to the list the removed matrix job used to pass in.
         run: |
           source .venv/bin/activate
-          scripts/run_tests.sh
+          scripts/run_tests.sh --slice "${{ matrix.slice }}/4"
         env:
           # Each standard runner has bounded CPU and memory. The previous
           # 96-worker setting exhausted this host and the job's 30-minute cap.
           # The canonical runner partitions its complete discovered file list
           # into disjoint slices; every file still runs with per-file isolation.
           HERMES_TEST_WORKERS: 2
-          HERMES_TEST_SLICE: ${{ matrix.slice }}/4
           # Ensure tests don't accidentally call real APIs
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""

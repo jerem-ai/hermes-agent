@@ -257,7 +257,7 @@ class TestCommandCodeFetchModelsPickerContract:
         assert profile is not None
         assert "base_url" in inspect.signature(profile.fetch_models).parameters
 
-    def test_resolve_provider_full(self):
+    def test_resolve_provider_full(self, monkeypatch):
         """Both profiles must resolve through the model-switch path.
 
         Regression: ``resolve_provider_full`` only knew models.dev + overlay
@@ -266,10 +266,16 @@ class TestCommandCodeFetchModelsPickerContract:
         them.
         """
         from hermes_cli.providers import resolve_provider_full
+        import agent.models_dev
+
+        # This regression covers plugin-only providers absent from the catalog.
+        # A changing downloaded catalog must not select a different branch.
+        monkeypatch.setattr(agent.models_dev, "get_provider_info", lambda *_a, **_kw: None)
 
         chat = resolve_provider_full("commandcode", {}, [])
         assert chat is not None and chat.id == "commandcode"
         assert chat.transport == "openai_chat"
+        assert chat.source == "plugin-profile"
         assert "COMMANDCODE_API_KEY" in chat.api_key_env_vars
 
         anth = resolve_provider_full("commandcode-anthropic", {}, [])
